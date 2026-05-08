@@ -1,6 +1,12 @@
 #include <iostream>
 #include <string>
-#include <commands.h>
+
+enum Command {
+    CMD_ECHO,
+    CMD_EXIT,
+    CMD_TYPE,
+    CMD_INVALID
+};
 
 int main() {
   // Flush after every std::cout / std:cerr
