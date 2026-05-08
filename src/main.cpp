@@ -19,9 +19,11 @@ int main() {
     std::string commandLine;
     std::getline(std::cin, commandLine);
     Command command = parse_command(commandLine);
+    //special command case
+    if (command == CMD_EXIT) {
+      break;
+    }
     switch (command) {
-      case CMD_EXIT:
-        break;
       case CMD_ECHO:
         std::cout << commandLine.substr(5) << std::endl;
         break;
