@@ -8,6 +8,8 @@ enum Command {
     CMD_INVALID
 };
 
+Command parse_command(std::string commandLine);
+
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
@@ -31,9 +33,11 @@ int main() {
         } else {
           std::cout << parameter + " is a shell builtin\n";
         }
+        break;
       }
       default:
         std::cout << commandLine + ": command not found\n";
+        break;
     }
   }
 }
