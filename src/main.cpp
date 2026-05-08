@@ -28,7 +28,6 @@ int main() {
       case CMD_TYPE: {
         std::string parameter = commandLine.substr(5);
         Command subCommand = parse_command(parameter);
-        std::cout << parameter;
         if (subCommand == CMD_INVALID) {
           std::cout << parameter + ": not found\n";
         } else {
@@ -46,6 +45,8 @@ int main() {
 Command parse_command(std::string commandLine) {
   if (commandLine == "exit") {
     return CMD_EXIT;
+  } else if (commandLine.substr(0, 4) == "type"){
+    return CMD_TYPE;
   } else if (commandLine.substr(0, 4) == "echo") {
     return CMD_ECHO;
   } else {
