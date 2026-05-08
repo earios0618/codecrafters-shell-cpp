@@ -1,12 +1,6 @@
 #include <iostream>
 #include <string>
-
-enum Command {
-    CMD_ECHO,
-    CMD_EXIT,
-    CMD_TYPE,
-    CMD_INVALID
-};
+#include "commands.h"
 
 Command parse_command(std::string commandLine);
 
