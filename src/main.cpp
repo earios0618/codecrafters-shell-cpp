@@ -28,6 +28,7 @@ int main() {
       case CMD_TYPE: {
         std::string parameter = commandLine.substr(5);
         Command subCommand = parse_command(parameter);
+        std::cout << parameter;
         if (subCommand == CMD_INVALID) {
           std::cout << parameter + ": not found\n";
         } else {
