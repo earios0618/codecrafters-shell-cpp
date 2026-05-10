@@ -113,6 +113,14 @@ int main() {
         }
         break;
       }
+      case CMD_CD: {
+        std::string path;
+        commandStream >> path;
+        if (chdir(path.c_str()) != 0) {
+          std::cout << "cd: " << path << ": No such file or directory\n";
+        }
+        break;
+      }
       default:
         std::cout << commandLine + ": command not found\n";
         break;
@@ -129,6 +137,8 @@ Command parse_command(std::string commandString) {
     return CMD_ECHO;
   } else if (commandString == "pwd") {
     return CMD_PWD;
+  } else if (commandString == "cd") {
+    return CMD_CD;
   } else {
     return NOT_BUILTIN;
   }
