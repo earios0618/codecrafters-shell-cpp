@@ -103,6 +103,16 @@ int main() {
           }
           break;
       }
+      case CMD_PWD: {
+        //size is arbitrary, but should be large enough for most paths
+        char cwd[1024];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+          std::cout << cwd << std::endl;
+        } else {
+          std::cerr << "Error getting current working directory\n";
+        }
+        break;
+      }
       default:
         std::cout << commandLine + ": command not found\n";
         break;
@@ -117,6 +127,8 @@ Command parse_command(std::string commandString) {
     return CMD_TYPE;
   } else if (commandString == "echo") {
     return CMD_ECHO;
+  } else if (commandString == "pwd") {
+    return CMD_PWD;
   } else {
     return NOT_BUILTIN;
   }
