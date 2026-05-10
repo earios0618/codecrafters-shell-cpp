@@ -1,20 +1,11 @@
 #include <iostream>
 #include <string>
 #include <sstream>
-// #include <vector>
+#include <vector>
 // #include <cstdlib>
 // #include <process.h>
-#include <Windows.h>
-
-#ifdef _WIN32
-#include <io.h>
-#define access _access
-#ifndef X_OK
-#define X_OK 0
-#endif
-#else
 #include <unistd.h>
-#endif
+#include <sys/wait.h>
 
 #include "commands.h"
 
@@ -28,25 +19,35 @@ int main() {
   while (true) {
     std::cout << "$ ";
     std::string commandLine;
+    //commandLine is just faux variable
     std::getline(std::cin, commandLine);
-    Command command = parse_command(commandLine);
+    std::stringstream commandStream(commandLine);
+    std::string commandString;
+    commandStream >> commandString;
+    //skip whitespace
+    commandStream >> std::ws;
+    Command command = parse_command(commandString);
     //special command case
     if (command == CMD_EXIT) {
       break;
     }
     switch (command) {
-      case CMD_ECHO:
-        std::cout << commandLine.substr(5) << std::endl;
+      case CMD_ECHO:{
+        std::string rest;
+        std::getline(commandStream, rest);
+        std::cout << rest << std::endl;
         break;
+      }
       case CMD_TYPE: {
-        std::string parameter = commandLine.substr(5);
+        std::string parameter;
+        commandStream >> parameter;
         Command subCommand = parse_command(parameter);
         if (subCommand == NOT_BUILTIN) {
           std::string path_env = std::getenv("PATH");
           std::stringstream ss_path(path_env);
           std::string path;
           bool found = false;
-          //maybe change this part due to os semantics
+          //specific semantics to linux
           while (std::getline(ss_path, path, ':')) {
             std::string full_path = path + '/' + parameter;
             if (access(full_path.c_str(), X_OK) == 0) {
@@ -67,25 +68,32 @@ int main() {
           std::string path_env = std::getenv("PATH");
           std::stringstream ss_path(path_env);
           std::string path;
-          std::stringstream commandStream(commandLine);
-          std::string commandString;
-          commandStream >> commandString;
           bool found = false;
           while (std::getline(ss_path, path, ':')) {
             std::string full_path = path + '/' + commandString;
             if (access(full_path.c_str(), X_OK) == 0) {
-              // Execute the command
-              std::string args = commandLine.substr(commandString.length());
-              std::string new_cmd = full_path + args;
-              STARTUPINFO si = { sizeof(STARTUPINFO) };
-              si.dwFlags = STARTF_USESHOWWINDOW;
-              si.wShowWindow = SW_HIDE;
-              PROCESS_INFORMATION pi;
-              if (CreateProcess(NULL, (LPWSTR)new_cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, INFINITE);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-                found = true;
+              found = true;
+              //populate arguments
+              std::vector<std::string> args;
+              args.push_back(commandString);
+              std::string arg;
+              while (commandStream >> arg) {
+                args.push_back(arg);
+              }
+              // Convert std::vector<std::string> to char* const*
+              std::vector<const char*> argv;
+              for (const auto& s : args) {
+                argv.push_back(s.c_str());
+              }
+              argv.push_back(nullptr); // Null-terminate the array
+              // Execute the file
+              pid_t pid = fork();
+              if (pid == 0) {
+                execv(full_path.c_str(), (char* const*) argv.data());
+              } else if (pid > 0) {
+                waitpid(pid, nullptr, 0);
+              } else {
+                std::cerr << "Failed to fork process\n";
               }
               break;
             }
@@ -102,12 +110,12 @@ int main() {
   }
 }
 
-Command parse_command(std::string commandLine) {
-  if (commandLine == "exit") {
+Command parse_command(std::string commandString) {
+  if (commandString == "exit") {
     return CMD_EXIT;
-  } else if (commandLine.substr(0, 4) == "type"){
+  } else if (commandString == "type"){
     return CMD_TYPE;
-  } else if (commandLine.substr(0, 4) == "echo") {
+  } else if (commandString == "echo") {
     return CMD_ECHO;
   } else {
     return NOT_BUILTIN;
