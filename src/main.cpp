@@ -116,6 +116,9 @@ int main() {
       case CMD_CD: {
         std::string path;
         commandStream >> path;
+        if (path == "~") {
+          path = std::getenv("HOME");
+        }
         if (chdir(path.c_str()) != 0) {
           std::cout << "cd: " << path << ": No such file or directory\n";
         }
