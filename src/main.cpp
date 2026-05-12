@@ -40,6 +40,9 @@ int main() {
       } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
         redirect_output(commandStream, STDOUT_FILENO, "a");
         continue;
+      } else if(arg == "2>>" && args.size() > 0) {
+        redirect_output(commandStream, STDERR_FILENO, "a");
+        continue;
       }
       args.push_back(arg);
     }
