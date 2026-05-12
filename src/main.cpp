@@ -12,7 +12,7 @@
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
-void redirect_output(std::string fileName, int replacingFD);
+void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
 //change error messages to error stream, get all arguments from the get go all while checking for quotes or >>
 //make exit case more like others using bool
 int main() {
@@ -34,17 +34,17 @@ int main() {
       if (arg == ">" || arg == "1>" && args.size() > 0) {
         std::string fileName;
         commandStream >> fileName;
-        redirect_output(fileName, STDOUT_FILENO, "w");
+        redirect_output(commandStream, STDOUT_FILENO, "w");
         continue;
       } else if(arg == "2>" && args.size() > 0) {
         std::string fileName;
         commandStream >> fileName;
-        redirect_output(fileName, STDERR_FILENO, "w");
+        redirect_output(commandStream, STDERR_FILENO, "w");
         continue;
       } else if (arg == ">>" && args.size() > 0) {
         std::string fileName;
         commandStream >> fileName;
-        redirect_output(fileName, STDOUT_FILENO, "a");
+        redirect_output(commandStream, STDOUT_FILENO, "a");
         continue;
       }
       args.push_back(arg);
@@ -163,8 +163,10 @@ std::string find_executable(std::string name) {
   return ""; // Return empty string if not found
 }
 
-//redirect replacingFD to fileName fd
-void redirect_output(std::string fileName, int replacingFD, const char mode[]) {
+//redirect replacingFD to next argument in stream which should be a file
+void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]) {
+  std::string fileName;
+  commandStream >> fileName;
   std::FILE* file = std::fopen(fileName.c_str(), mode);
   int fd = fileno(file);
   dup2(fd, replacingFD);
