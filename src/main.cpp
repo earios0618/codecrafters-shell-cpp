@@ -11,97 +11,89 @@
 
 
 Command parse_command(std::string commandLine);
-//refactor to use stream logic
+std::string find_executable(std::string name);
+//change error messages to error stream, get all arguments from the get go all while checking for quotes or >>
+//make exit case more like others using bool
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
+  int original_stdout = dup(STDOUT_FILENO);
   while (true) {
     std::cout << "$ ";
     std::string commandLine;
     //commandLine is just faux variable
     std::getline(std::cin, commandLine);
     std::stringstream commandStream(commandLine);
-    std::string commandString;
-    commandStream >> commandString;
-    //skip whitespace
-    commandStream >> std::ws;
-    Command command = parse_command(commandString);
+    //populate arguments, first argument is command
+    std::vector<std::string> args;
+    std::string arg;
+    while (commandStream >> arg) {
+      if (arg == ">" || arg == "1>") {
+        //char output var to commandStream >>, check if file is exists, if not create it
+        std::string fileName;
+        commandStream >> fileName;
+        //use dup methods to redirect output to file
+        std::FILE* file = std::fopen(fileName.c_str(), "w");
+        int fd = fileno(file);
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+        continue;
+      }
+      args.push_back(arg);
+    }
+    Command command = parse_command(args[0]);
     //special command case
     if (command == CMD_EXIT) {
       break;
     }
     switch (command) {
       case CMD_ECHO:{
-        std::string rest;
-        std::getline(commandStream, rest);
-        std::cout << rest << std::endl;
+        for (size_t i = 1; i < args.size(); i++) {
+          std::cout << args[i];
+          if (i < args.size() - 1) {
+            std::cout << " ";
+          }
+        }
+        std::cout << std::endl;
         break;
       }
       case CMD_TYPE: {
-        std::string parameter;
-        commandStream >> parameter;
-        Command subCommand = parse_command(parameter);
+        Command subCommand = parse_command(args[1]);
         if (subCommand == NOT_BUILTIN) {
-          std::string path_env = std::getenv("PATH");
-          std::stringstream ss_path(path_env);
-          std::string path;
-          bool found = false;
-          //specific semantics to linux
-          while (std::getline(ss_path, path, ':')) {
-            std::string full_path = path + '/' + parameter;
-            if (access(full_path.c_str(), X_OK) == 0) {
-              std::cout << parameter << " is " << full_path << std::endl;
-              found = true;
-              break;
-            }
-          }
-          if (!found) {
-            std::cout << parameter + ": not found\n";
+          std::string path = find_executable(args[1]);
+          if (!path.empty()) {
+            std::cout << args[1] << " is " << path << std::endl;
+          } else {
+            std::cout << args[1] << ": not found\n";
           }
         } else {
-          std::cout << parameter + " is a shell builtin\n";
+          std::cout << args[1] << " is a shell builtin\n";
         }
         break;
       }
       case NOT_BUILTIN: {
-          std::string path_env = std::getenv("PATH");
-          std::stringstream ss_path(path_env);
-          std::string path;
-          bool found = false;
-          while (std::getline(ss_path, path, ':')) {
-            std::string full_path = path + '/' + commandString;
-            if (access(full_path.c_str(), X_OK) == 0) {
-              found = true;
-              //populate arguments
-              std::vector<std::string> args;
-              args.push_back(commandString);
-              std::string arg;
-              while (commandStream >> arg) {
-                args.push_back(arg);
-              }
-              // Convert std::vector<std::string> to char* const*
-              std::vector<const char*> argv;
-              for (const auto& s : args) {
-                argv.push_back(s.c_str());
-              }
-              argv.push_back(nullptr); // Null-terminate the array
-              // Execute the file
-              pid_t pid = fork();
-              if (pid == 0) {
-                execv(full_path.c_str(), (char* const*) argv.data());
-              } else if (pid > 0) {
-                waitpid(pid, nullptr, 0);
-              } else {
-                std::cerr << "Failed to fork process\n";
-              }
-              break;
-            }
+        std::string path = find_executable(args[0]);
+        if (!path.empty()) {
+          // Convert string arguments to c strings
+          std::vector<const char*> argv;
+          for (const auto& s : args) {
+            argv.push_back(s.c_str());
           }
-          if (!found) {
-            std::cout << commandString + ": command not found\n";
+          argv.push_back(nullptr); // Null-terminate the vector
+          // Execute the file
+          pid_t pid = fork();
+          if (pid == 0) {
+            execv(path.c_str(), (char* const*) argv.data());
+          } else if (pid > 0) {
+            waitpid(pid, nullptr, 0);
+          } else {
+            std::cerr << "Failed to fork process\n";
           }
-          break;
+        } else {
+          std::cout << args[0] << ": command not found\n";
+        }
+        break;
       }
       case CMD_PWD: {
         //size is arbitrary, but should be large enough for most paths
@@ -114,21 +106,20 @@ int main() {
         break;
       }
       case CMD_CD: {
-        std::string path;
-        commandStream >> path;
-        if (path == "~") {
-          path = std::getenv("HOME");
-        }
+        std::string path = args[1] != "~" ? args[1] : std::getenv("HOME");
         if (chdir(path.c_str()) != 0) {
           std::cout << "cd: " << path << ": No such file or directory\n";
         }
         break;
       }
       default:
-        std::cout << commandLine + ": command not found\n";
+        std::cout << args[0] << ": command not found\n";
         break;
     }
+    //restore stdout
+    dup2(original_stdout, STDOUT_FILENO);
   }
+  close(original_stdout);
 }
 
 Command parse_command(std::string commandString) {
@@ -145,4 +136,18 @@ Command parse_command(std::string commandString) {
   } else {
     return NOT_BUILTIN;
   }
+}
+
+std::string find_executable(std::string name) {
+  std::string path_env = std::getenv("PATH");
+  std::stringstream ss_path(path_env);
+  std::string path;
+  //specific semantics to linux
+  while (std::getline(ss_path, path, ':')) {
+    std::string full_path = path + '/' + name;
+    if (access(full_path.c_str(), X_OK) == 0) {
+      return full_path;
+    }
+  }
+  return ""; // Return empty string if not found
 }
