@@ -12,13 +12,15 @@
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
+void redirect_output(std::string fileName, int replacingFD);
 //change error messages to error stream, get all arguments from the get go all while checking for quotes or >>
 //make exit case more like others using bool
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
-  int original_stdout = dup(STDOUT_FILENO);
+  int originalStdout = dup(STDOUT_FILENO);
+  int originalStderr = dup(STDERR_FILENO);
   while (true) {
     std::cout << "$ ";
     std::string commandLine;
@@ -29,15 +31,16 @@ int main() {
     std::vector<std::string> args;
     std::string arg;
     while (commandStream >> arg) {
-      if (arg == ">" || arg == "1>") {
+      if (arg == ">" || arg == "1>" && args.size() > 0) {
         //char output var to commandStream >>, check if file is exists, if not create it
         std::string fileName;
         commandStream >> fileName;
-        //use dup methods to redirect output to file
-        std::FILE* file = std::fopen(fileName.c_str(), "w");
-        int fd = fileno(file);
-        dup2(fd, STDOUT_FILENO);
-        close(fd);
+        redirect_output(fileName, STDOUT_FILENO);
+        continue;
+      } else if(arg == "2>" && args.size() > 0) {
+        std::string fileName;
+        commandStream >> fileName;
+        redirect_output(fileName, STDERR_FILENO);
         continue;
       }
       args.push_back(arg);
@@ -91,7 +94,7 @@ int main() {
             std::cerr << "Failed to fork process\n";
           }
         } else {
-          std::cout << args[0] << ": command not found\n";
+          std::cerr << args[0] << ": command not found\n";
         }
         break;
       }
@@ -108,20 +111,23 @@ int main() {
       case CMD_CD: {
         std::string path = args[1] != "~" ? args[1] : std::getenv("HOME");
         if (chdir(path.c_str()) != 0) {
-          std::cout << "cd: " << path << ": No such file or directory\n";
+          std::cerr << "cd: " << path << ": No such file or directory\n";
         }
         break;
       }
       default:
-        std::cout << args[0] << ": command not found\n";
+        std::cerr << args[0] << ": command not found\n";
         break;
     }
-    //restore stdout
-    dup2(original_stdout, STDOUT_FILENO);
+    //restore stdout and stderr
+    dup2(originalStdout, STDOUT_FILENO);
+    dup2(originalStderr, STDERR_FILENO);
   }
-  close(original_stdout);
+  close(originalStdout);
+  close(originalStderr);
 }
 
+//return enum for string command
 Command parse_command(std::string commandString) {
   if (commandString == "exit") {
     return CMD_EXIT;
@@ -138,6 +144,7 @@ Command parse_command(std::string commandString) {
   }
 }
 
+//search through PATH environment variable for executable, return path if found, empty string if not found
 std::string find_executable(std::string name) {
   std::string path_env = std::getenv("PATH");
   std::stringstream ss_path(path_env);
@@ -150,4 +157,12 @@ std::string find_executable(std::string name) {
     }
   }
   return ""; // Return empty string if not found
+}
+
+//redirect replacingFD to fileName fd
+void redirect_output(std::string fileName, int replacingFD) {
+  std::FILE* file = std::fopen(fileName.c_str(), "w");
+  int fd = fileno(file);
+  dup2(fd, replacingFD);
+  close(fd);
 }
