@@ -32,18 +32,12 @@ int main() {
     std::string arg;
     while (commandStream >> arg) {
       if (arg == ">" || arg == "1>" && args.size() > 0) {
-        std::string fileName;
-        commandStream >> fileName;
         redirect_output(commandStream, STDOUT_FILENO, "w");
         continue;
       } else if(arg == "2>" && args.size() > 0) {
-        std::string fileName;
-        commandStream >> fileName;
         redirect_output(commandStream, STDERR_FILENO, "w");
         continue;
       } else if (arg == ">>" && args.size() > 0) {
-        std::string fileName;
-        commandStream >> fileName;
         redirect_output(commandStream, STDOUT_FILENO, "a");
         continue;
       }
