@@ -32,15 +32,19 @@ int main() {
     std::string arg;
     while (commandStream >> arg) {
       if (arg == ">" || arg == "1>" && args.size() > 0) {
-        //char output var to commandStream >>, check if file is exists, if not create it
         std::string fileName;
         commandStream >> fileName;
-        redirect_output(fileName, STDOUT_FILENO);
+        redirect_output(fileName, STDOUT_FILENO, "w");
         continue;
       } else if(arg == "2>" && args.size() > 0) {
         std::string fileName;
         commandStream >> fileName;
-        redirect_output(fileName, STDERR_FILENO);
+        redirect_output(fileName, STDERR_FILENO, "w");
+        continue;
+      } else if (arg == ">>" && args.size() > 0) {
+        std::string fileName;
+        commandStream >> fileName;
+        redirect_output(fileName, STDOUT_FILENO, "a");
         continue;
       }
       args.push_back(arg);
@@ -160,8 +164,8 @@ std::string find_executable(std::string name) {
 }
 
 //redirect replacingFD to fileName fd
-void redirect_output(std::string fileName, int replacingFD) {
-  std::FILE* file = std::fopen(fileName.c_str(), "w");
+void redirect_output(std::string fileName, int replacingFD, const char mode[]) {
+  std::FILE* file = std::fopen(fileName.c_str(), mode);
   int fd = fileno(file);
   dup2(fd, replacingFD);
   close(fd);
