@@ -2,18 +2,22 @@
 #include <string>
 #include <sstream>
 #include <vector>
-// #include <cstdlib>
-// #include <process.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #include "commands.h"
-
+#include "Trie.h"
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
 void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
-//change error messages to error stream, get all arguments from the get go all while checking for quotes or >>
+Trie initCmdTrie();
+char** attemptCompletion(const char* text, int start, int end);
+char* completion(const char* text, int state);
+Trie commandTrie = initCmdTrie();
+
 //make exit case more like others using bool
 int main() {
   // Flush after every std::cout / std:cerr
@@ -21,11 +25,13 @@ int main() {
   std::cerr << std::unitbuf;
   int originalStdout = dup(STDOUT_FILENO);
   int originalStderr = dup(STDERR_FILENO);
+  //auto completion using readline and Trie
+  rl_attempted_completion_function = attemptCompletion;
+
   while (true) {
-    std::cout << "$ ";
-    std::string commandLine;
     //commandLine is just faux variable
-    std::getline(std::cin, commandLine);
+    std::string commandLine;
+    commandLine = readline("$ ");
     std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
@@ -80,15 +86,15 @@ int main() {
         std::string path = find_executable(args[0]);
         if (!path.empty()) {
           // Convert string arguments to c strings
-          std::vector<const char*> argv;
-          for (const auto& s : args) {
-            argv.push_back(s.c_str());
+          const char* argv[args.size() + 1];
+          for (size_t i = 0; i < args.size(); i++) {
+            argv[i] = args[i].c_str();
           }
-          argv.push_back(nullptr); // Null-terminate the vector
+          argv[args.size()] = nullptr; // Null-terminate the array
           // Execute the file
           pid_t pid = fork();
           if (pid == 0) {
-            execv(path.c_str(), (char* const*) argv.data());
+            execv(path.c_str(), (char* const*) argv);
           } else if (pid > 0) {
             waitpid(pid, nullptr, 0);
           } else {
@@ -169,3 +175,41 @@ void redirect_output(std::stringstream& commandStream, int replacingFD, const ch
   dup2(fd, replacingFD);
   close(fd);
 }
+
+//initialize the Trie with builtin commands for auto-completion
+Trie initCmdTrie() {
+  Trie commandTrie;
+  commandTrie.insert("echo");
+  commandTrie.insert("exit");
+  commandTrie.insert("type");
+  commandTrie.insert("pwd");
+  commandTrie.insert("cd");
+  return commandTrie;
+}
+
+char** attemptCompletion(const char* text, int start, int end) {
+  rl_attempted_completion_over = 1;
+  return rl_completion_matches(text, completion);
+}
+
+char* completion(const char* text, int state) {
+  static std::vector<std::string> matches;
+  static size_t matchIndex;
+
+  if (state == 0) {
+    matches.clear();
+    matchIndex = 0;
+    std::string prefix(text);
+    if (prefix.empty()) {
+      return nullptr;
+    }
+    matches = commandTrie.withPrefix(prefix);
+  }
+
+  if (matchIndex < matches.size()) {
+    return strdup(matches[matchIndex++].c_str());
+  } else {
+    return nullptr;
+  }
+}
+
