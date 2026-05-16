@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <dirent.h>
 
 #include "commands.h"
 #include "Trie.h"
@@ -203,7 +204,24 @@ char* completion(const char* text, int state) {
     if (prefix.empty()) {
       return nullptr;
     }
-    matches = commandTrie.withPrefix(prefix);
+    matches = commandTrie.withPrefix(prefix); //add command matches
+    //add executable matches from PATH
+    std::string path_env = std::getenv("PATH");
+    std::stringstream ss_path(path_env);
+    std::string path;
+    while (std::getline(ss_path, path, ':')) {
+      DIR* dir = opendir(path.c_str());
+      if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+          std::string fileName(entry->d_name);
+          if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
+            matches.push_back(fileName);
+          }
+        }
+        closedir(dir);
+      }
+    }
   }
 
   if (matchIndex < matches.size()) {
