@@ -10,6 +10,7 @@
 
 #include "commands.h"
 #include "Trie.h"
+#include <unordered_map>
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
@@ -19,6 +20,7 @@ char** attemptCompletion(const char* text, int start, int end);
 char* firstCompletion(const char* text, int state);
 char* fileCompletion(const char* text, int state);
 Trie commandTrie = initCmdTrie();
+unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
 
 //TODO: make exit case more like others using bool, fix extra space in file auto completion double tab list
 int main() {
@@ -123,11 +125,20 @@ int main() {
         }
         break;
       }
-      case CMD_CMPLT:
+      case CMD_CMPLT:{
         if (args[1] == "-p") {
-          std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
+          if (customCompletions.find(args[2]) != customCompletions.end()) {
+            std::cout << "complete -C '" << customCompletions[args[2]] << "' " << args[2] << std::endl;
+          } else {
+            std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
+          }
+        } else if (args[1] == "-C") {
+          customCompletions[args[3]] = args[2];
+        } else {
+          std::cerr << "complete: invalid option " << args[1] << std::endl;
         }
         break;
+      }
       default:
         std::cerr << args[0] << ": command not found\n";
         break;
