@@ -16,7 +16,8 @@ std::string find_executable(std::string name);
 void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
 Trie initCmdTrie();
 char** attemptCompletion(const char* text, int start, int end);
-char* completion(const char* text, int state);
+char* firstCompletion(const char* text, int state);
+char* fileCompletion(const char* text, int state);
 Trie commandTrie = initCmdTrie();
 
 //make exit case more like others using bool
@@ -189,11 +190,15 @@ Trie initCmdTrie() {
 }
 
 char** attemptCompletion(const char* text, int start, int end) {
-  // rl_attempted_completion_over = 1;
-  return rl_completion_matches(text, completion);
+  rl_attempted_completion_over = 1;
+  if (start == 0) {
+    return rl_completion_matches(text, firstCompletion);
+  }
+  return rl_completion_matches(text, fileCompletion);
 }
 
-char* completion(const char* text, int state) {
+//auto completion for commands and executables in PATH
+char* firstCompletion(const char* text, int state) {
   static std::vector<std::string> matches;
   static size_t matchIndex;
 
@@ -216,7 +221,9 @@ char* completion(const char* text, int state) {
         while ((entry = readdir(dir)) != nullptr) {
           std::string fileName(entry->d_name);
           if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
-            matches.push_back(fileName);
+            if (access((path + '/' + fileName).c_str(), X_OK) == 0) {
+              matches.push_back(fileName);
+            }
           }
         }
         closedir(dir);
@@ -224,6 +231,43 @@ char* completion(const char* text, int state) {
     }
   }
 
+  if (matchIndex < matches.size()) {
+    return strdup(matches[matchIndex++].c_str());
+  } else {
+    return nullptr;
+  }
+}
+
+char* fileCompletion(const char* text, int state) {
+  static std::vector<std::string> matches;
+  static size_t matchIndex;
+  if (state == 0) {
+    matches.clear();
+    matchIndex = 0;
+    std::string dir = ".";
+    std::string prefix(text);
+    size_t lastSlash = prefix.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+      dir = prefix.substr(0, lastSlash);
+      prefix = prefix.substr(lastSlash + 1);
+    }
+    DIR* directory = opendir(dir.c_str());
+    if (directory) {
+      struct dirent* entry;
+      while ((entry = readdir(directory)) != nullptr) {
+        std::string fileName(entry->d_name);
+        if (fileName == "." || fileName == "..") continue;
+        if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
+          if (dir == ".") {
+            matches.push_back(fileName);
+          } else {
+            matches.push_back(dir + '/' + fileName);
+          }
+        }
+      }
+      closedir(directory);
+    }
+  }
   if (matchIndex < matches.size()) {
     return strdup(matches[matchIndex++].c_str());
   } else {
