@@ -29,7 +29,6 @@ int main() {
   int originalStderr = dup(STDERR_FILENO);
   //auto completion using readline and Trie
   rl_attempted_completion_function = attemptCompletion;
-
   while (true) {
     //commandLine is just faux variable
     std::string commandLine;
@@ -192,9 +191,12 @@ Trie initCmdTrie() {
 char** attemptCompletion(const char* text, int start, int end) {
   rl_attempted_completion_over = 1;
   if (start == 0) {
+    rl_completion_append_character = ' ';
     return rl_completion_matches(text, firstCompletion);
+  } else {
+    rl_completion_append_character = '\0';
+    return rl_completion_matches(text, fileCompletion);
   }
-  return rl_completion_matches(text, fileCompletion);
 }
 
 //auto completion for commands and executables in PATH
@@ -262,9 +264,10 @@ char* fileCompletion(const char* text, int state) {
           std::string returnMatch = dir == "." ? fileName : fullPath;
           // Check if it's a directory or file
           if (entry->d_type == DT_DIR) {
-            returnMatch += '/';
+            matches.push_back(returnMatch + "/"); // Append '/' for directories
+          } else {
+            matches.push_back(returnMatch + " "); // Append ' ' for files
           }
-          matches.push_back(returnMatch); 
         }
       }
       closedir(directory);

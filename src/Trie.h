@@ -104,5 +104,4 @@ public:
         prefixHelper(curr, prefix, words);
         return words;
     }
-
 };
