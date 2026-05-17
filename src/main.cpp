@@ -187,7 +187,7 @@ Trie initCmdTrie() {
   commandTrie.insert("type");
   commandTrie.insert("pwd");
   commandTrie.insert("cd");
-  commandTrie.insert("complete")
+  commandTrie.insert("complete");
   return commandTrie;
 }
 
