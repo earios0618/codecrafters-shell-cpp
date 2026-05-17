@@ -258,11 +258,13 @@ char* fileCompletion(const char* text, int state) {
         std::string fileName(entry->d_name);
         if (fileName == "." || fileName == "..") continue;
         if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
-          if (dir == ".") {
-            matches.push_back(fileName);
-          } else {
-            matches.push_back(dir + '/' + fileName);
+          std::string fullPath = dir + '/' + fileName;
+          std::string returnMatch = dir == "." ? fileName : fullPath;
+          // Check if it's a directory or file
+          if (entry->d_type == DT_DIR) {
+            returnMatch += '/';
           }
+          matches.push_back(returnMatch); 
         }
       }
       closedir(directory);
