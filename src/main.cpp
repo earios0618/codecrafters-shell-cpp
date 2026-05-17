@@ -123,6 +123,10 @@ int main() {
         }
         break;
       }
+      case CMD_CMPLT:
+        if (args[1] == "-p") {
+          std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
+        }
       default:
         std::cerr << args[0] << ": command not found\n";
         break;
