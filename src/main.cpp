@@ -127,6 +127,7 @@ int main() {
         if (args[1] == "-p") {
           std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
         }
+        break;
       default:
         std::cerr << args[0] << ": command not found\n";
         break;
