@@ -20,7 +20,7 @@ char* firstCompletion(const char* text, int state);
 char* fileCompletion(const char* text, int state);
 Trie commandTrie = initCmdTrie();
 
-//make exit case more like others using bool
+//TODO: make exit case more like others using bool, fix extra space in file auto completion double tab list
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
@@ -147,6 +147,8 @@ Command parse_command(std::string commandString) {
     return CMD_PWD;
   } else if (commandString == "cd") {
     return CMD_CD;
+  } else if (commandString == "complete") {
+    return CMD_CMPLT;
   } else {
     return NOT_BUILTIN;
   }
@@ -185,6 +187,7 @@ Trie initCmdTrie() {
   commandTrie.insert("type");
   commandTrie.insert("pwd");
   commandTrie.insert("cd");
+  commandTrie.insert("complete")
   return commandTrie;
 }
 

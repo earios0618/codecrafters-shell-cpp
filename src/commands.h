@@ -4,5 +4,6 @@ enum Command {
     CMD_TYPE,
     CMD_PWD,
     CMD_CD,
+    CMD_CMPLT,
     NOT_BUILTIN
 };
