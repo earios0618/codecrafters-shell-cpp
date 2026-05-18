@@ -231,6 +231,8 @@ char** attemptCompletion(const char* text, int start, int end) {
       args[2] = tokens.back().c_str();
       args[3] = tokens.size() > 2 ? tokens.at(tokens.size() - 2).c_str() : nullptr;
       args[4] = nullptr;
+      setenv("COMP_LINE", rl_line_buffer, 1);
+      setenv("COMP_POINT", std::to_string(rl_point).c_str(), 1);
       execv(customCompletions[tokens[0]].c_str(), (char* const*) args);
     } else if (pid > 0) {
       waitpid(pid, nullptr, 0);
