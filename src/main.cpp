@@ -226,10 +226,11 @@ char** attemptCompletion(const char* text, int start, int end) {
       dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
       close(pipefd[1]); // Close original write end
       const char *args[5];
+      std::string fourthArg = tokens.size() > 1 ? tokens.at(tokens.size() - 2).c_str() : "";
       args[0] = customCompletions[tokens[0]].c_str();
       args[1] = tokens[0].c_str();
       args[2] = tokens.back().c_str();
-      args[3] = tokens.size() > 2 ? tokens.at(tokens.size() - 2).c_str() : nullptr;
+      args[3] = fourthArg.c_str();
       args[4] = nullptr;
       setenv("COMP_LINE", rl_line_buffer, 1);
       std::string compPointStr = std::to_string(rl_point);
