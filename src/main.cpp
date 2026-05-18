@@ -136,6 +136,8 @@ int main() {
           }
         } else if (args[1] == "-C") {
           customCompletions[args[3]] = args[2];
+        } else if (args[1] == "-r") {
+          customCompletions.erase(args[2]);
         } else {
           std::cerr << "complete: invalid option " << args[1] << std::endl;
         }
