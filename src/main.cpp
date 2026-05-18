@@ -68,12 +68,22 @@ int main() {
       int pid = fork();
       if (pid == 0) {
         Command command = parse_command(args[0]);
+        if (command != NOT_BUILTIN) {
+          handleCMD(command, args);
+          exit(0);
+        }
+        std::string path = find_executable(args[0]);
+        if (path.empty()) {
+          std::cerr << args[0] << ": command not found" << std::endl;
+          exit(1);
+        }
+        // Convert string arguments to c strings
         const char* argv[args.size() + 1];
         for (size_t i = 0; i < args.size(); i++) {
           argv[i] = args[i].c_str();
         } 
         argv[args.size()] = nullptr; // Null-terminate the array
-        execv(find_executable(args[0]).c_str(), (char* const*) argv);
+        execv(path.c_str(), (char* const*) argv);
       } else if (pid > 0) {
         // Parent process does not wait for the child and continues to the next iteration of the loop
         std::cout << "[" << bckgrndJobs << "] " << pid << std::endl;
