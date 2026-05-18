@@ -19,16 +19,18 @@ Trie initCmdTrie();
 char** attemptCompletion(const char* text, int start, int end);
 char* firstCompletion(const char* text, int state);
 char* fileCompletion(const char* text, int state);
+int originalStdout = dup(STDOUT_FILENO);
+int originalStderr = dup(STDERR_FILENO);
+char *customCMPLT(const char* text, int state);
 Trie commandTrie = initCmdTrie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
+int pipefd[2]; //pipe for custom completion, pipefd[0] is read end, pipefd[1] is write end
 
 //TODO: make exit case more like others using bool, fix extra space in file auto completion double tab list
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
-  int originalStdout = dup(STDOUT_FILENO);
-  int originalStderr = dup(STDERR_FILENO);
   //auto completion using readline and Trie
   rl_attempted_completion_function = attemptCompletion;
   while (true) {
@@ -209,12 +211,54 @@ Trie initCmdTrie() {
 
 char** attemptCompletion(const char* text, int start, int end) {
   rl_attempted_completion_over = 1;
-  if (start == 0) {
+  char *commandEnd = strchr(rl_line_buffer, ' ');
+  std::string command = commandEnd ? std::string(rl_line_buffer, commandEnd - rl_line_buffer) : "";
+  if (command != "" && customCompletions.find(command) != customCompletions.end()) {
+    pipe(pipefd);
+    int pid = fork();
+    if (pid == 0) {
+      // Execute the custom completion command and capture its output
+      close(pipefd[0]); // Close read end in child
+      dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
+      close(pipefd[1]); // Close original write end
+      execv(customCompletions[command].c_str(), nullptr);
+    } else if (pid > 0) {
+      waitpid(pid, nullptr, 0);
+      close(pipefd[1]); // Close write end in parent
+      return rl_completion_matches(text, customCMPLT);
+    } else {
+      std::cerr << "Failed to fork process for custom completion\n";
+    }
+  }
+  if (start == 0 || strncmp(rl_line_buffer, "type", 4) == 0) { //only do command completion for first word or after type command
     rl_completion_append_character = ' ';
     return rl_completion_matches(text, firstCompletion);
   } else {
     rl_completion_append_character = '\0';
     return rl_completion_matches(text, fileCompletion);
+  }
+}
+
+char *customCMPLT(const char* text, int state) {
+  static std::vector<std::string> matches;
+  static size_t matchIndex;
+  if (state == 0) {
+    matches.clear();
+    matchIndex = 0;
+    std::FILE* infile = fdopen(pipefd[0], "r");
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), infile)) {
+      std::string line(buffer);
+      line.pop_back(); // Remove newline character
+      matches.push_back(line);
+    }
+    fclose(infile);
+    close(pipefd[0]);
+  }
+  if (matchIndex < matches.size()) {
+    return strdup(matches[matchIndex++].c_str());
+  } else {
+    return nullptr;
   }
 }
 
