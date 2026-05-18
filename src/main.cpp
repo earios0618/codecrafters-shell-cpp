@@ -11,6 +11,7 @@
 #include "commands.h"
 #include "Trie.h"
 #include <unordered_map>
+#include <iomanip>
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
@@ -28,6 +29,13 @@ Trie commandTrie = initCmdTrie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
 int pipefd[2]; //pipe for custom completion, pipefd[0] is read end, pipefd[1] is write end
 int bckgrndJobs = 0; //number of background jobs called
+struct Job {
+  int id;
+  pid_t pid;
+  std::string commandLine;
+  std::string status;
+};
+std::vector<Job> jobs; //storage for background jobs
 
 //TODO: make exit case more like others using direct call to exit(), fix extra space in file auto completion double tab list
 int main() {
@@ -86,6 +94,8 @@ int main() {
         execv(path.c_str(), (char* const*) argv);
       } else if (pid > 0) {
         // Parent process does not wait for the child and continues to the next iteration of the loop
+        Job newJob = {bckgrndJobs, pid, commandLine, "Running"};
+        jobs.push_back(newJob);
         std::cout << "[" << bckgrndJobs << "] " << pid << std::endl;
         continue;
       } else {
@@ -392,6 +402,13 @@ void handleCMD(Command command, std::vector<std::string>& args) {
       break;
     }
     case CMD_JOBS: {
+      for(const Job& job : jobs) {
+        std::cout << "[" << job.id << "] ";
+        if (&job == &jobs.back()) {
+          std::cout << "+ ";
+        }
+        std::cout << std::left << std::setw(24) << job.status << std::right << job.commandLine << std::endl;
+      }
       break;
     }
     default:
