@@ -127,7 +127,7 @@ int main() {
         }
         break;
       }
-      case CMD_CMPLT:{
+      case CMD_CMPLT: {
         if (args[1] == "-p") {
           if (customCompletions.find(args[2]) != customCompletions.end()) {
             std::cout << "complete -C '" << customCompletions[args[2]] << "' " << args[2] << std::endl;
@@ -141,6 +141,9 @@ int main() {
         } else {
           std::cerr << "complete: invalid option " << args[1] << std::endl;
         }
+        break;
+      }
+      case CMD_JOBS: {
         break;
       }
       default:
@@ -169,6 +172,8 @@ Command parse_command(std::string commandString) {
     return CMD_CD;
   } else if (commandString == "complete") {
     return CMD_CMPLT;
+  } else if (commandString == "jobs") {
+    return CMD_JOBS;
   } else {
     return NOT_BUILTIN;
   }

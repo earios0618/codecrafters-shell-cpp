@@ -5,5 +5,6 @@ enum Command {
     CMD_PWD,
     CMD_CD,
     CMD_CMPLT,
+    CMD_JOBS,
     NOT_BUILTIN
 };
