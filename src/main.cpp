@@ -22,11 +22,14 @@ char* fileCompletion(const char* text, int state);
 int originalStdout = dup(STDOUT_FILENO);
 int originalStderr = dup(STDERR_FILENO);
 char *customCMPLT(const char* text, int state);
+void handleCMD(Command command, std::vector<std::string>& args);
+
 Trie commandTrie = initCmdTrie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
 int pipefd[2]; //pipe for custom completion, pipefd[0] is read end, pipefd[1] is write end
+int bckgrndJobs = 0; //number of background jobs called
 
-//TODO: make exit case more like others using bool, fix extra space in file auto completion double tab list
+//TODO: make exit case more like others using direct call to exit(), fix extra space in file auto completion double tab list
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
@@ -34,7 +37,9 @@ int main() {
   //auto completion using readline and Trie
   rl_attempted_completion_function = attemptCompletion;
   while (true) {
-    //commandLine is just faux variable
+    //restore stdout and stderr
+    dup2(originalStdout, STDOUT_FILENO);
+    dup2(originalStderr, STDERR_FILENO);
     std::string commandLine;
     commandLine = readline("$ ");
     std::stringstream commandStream(commandLine);
@@ -57,102 +62,32 @@ int main() {
       }
       args.push_back(arg);
     }
+    if (args.back() == "&") {
+      args.pop_back();
+      bckgrndJobs++;
+      int pid = fork();
+      if (pid == 0) {
+        Command command = parse_command(args[0]);
+        const char* argv[args.size() + 1];
+        for (size_t i = 0; i < args.size(); i++) {
+          argv[i] = args[i].c_str();
+        } 
+        argv[args.size()] = nullptr; // Null-terminate the array
+        execv(find_executable(args[0]).c_str(), (char* const*) argv);
+      } else if (pid > 0) {
+        // Parent process does not wait for the child and continues to the next iteration of the loop
+        std::cout << "[" << bckgrndJobs << "] " << pid << std::endl;
+        continue;
+      } else {
+        std::cerr << "Failed to fork process for background execution\n";
+      }
+    }
     Command command = parse_command(args[0]);
     //special command case
     if (command == CMD_EXIT) {
       break;
     }
-    switch (command) {
-      case CMD_ECHO:{
-        for (size_t i = 1; i < args.size(); i++) {
-          std::cout << args[i];
-          if (i < args.size() - 1) {
-            std::cout << " ";
-          }
-        }
-        std::cout << std::endl;
-        break;
-      }
-      case CMD_TYPE: {
-        Command subCommand = parse_command(args[1]);
-        if (subCommand == NOT_BUILTIN) {
-          std::string path = find_executable(args[1]);
-          if (!path.empty()) {
-            std::cout << args[1] << " is " << path << std::endl;
-          } else {
-            std::cout << args[1] << ": not found\n";
-          }
-        } else {
-          std::cout << args[1] << " is a shell builtin\n";
-        }
-        break;
-      }
-      case NOT_BUILTIN: {
-        std::string path = find_executable(args[0]);
-        if (!path.empty()) {
-          // Convert string arguments to c strings
-          const char* argv[args.size() + 1];
-          for (size_t i = 0; i < args.size(); i++) {
-            argv[i] = args[i].c_str();
-          }
-          argv[args.size()] = nullptr; // Null-terminate the array
-          // Execute the file
-          pid_t pid = fork();
-          if (pid == 0) {
-            execv(path.c_str(), (char* const*) argv);
-          } else if (pid > 0) {
-            waitpid(pid, nullptr, 0);
-          } else {
-            std::cerr << "Failed to fork process\n";
-          }
-        } else {
-          std::cerr << args[0] << ": command not found\n";
-        }
-        break;
-      }
-      case CMD_PWD: {
-        //size is arbitrary, but should be large enough for most paths
-        char cwd[1024];
-        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-          std::cout << cwd << std::endl;
-        } else {
-          std::cerr << "Error getting current working directory\n";
-        }
-        break;
-      }
-      case CMD_CD: {
-        std::string path = args[1] != "~" ? args[1] : std::getenv("HOME");
-        if (chdir(path.c_str()) != 0) {
-          std::cerr << "cd: " << path << ": No such file or directory\n";
-        }
-        break;
-      }
-      case CMD_CMPLT: {
-        if (args[1] == "-p") {
-          if (customCompletions.find(args[2]) != customCompletions.end()) {
-            std::cout << "complete -C '" << customCompletions[args[2]] << "' " << args[2] << std::endl;
-          } else {
-            std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
-          }
-        } else if (args[1] == "-C") {
-          customCompletions[args[3]] = args[2];
-        } else if (args[1] == "-r") {
-          customCompletions.erase(args[2]);
-        } else {
-          std::cerr << "complete: invalid option " << args[1] << std::endl;
-        }
-        break;
-      }
-      case CMD_JOBS: {
-        break;
-      }
-      default:
-        std::cerr << args[0] << ": command not found\n";
-        break;
-    }
-    //restore stdout and stderr
-    dup2(originalStdout, STDOUT_FILENO);
-    dup2(originalStderr, STDERR_FILENO);
+    handleCMD(command, args);
   }
   close(originalStdout);
   close(originalStderr);
@@ -364,3 +299,93 @@ char* fileCompletion(const char* text, int state) {
   }
 }
 
+void handleCMD(Command command, std::vector<std::string>& args) {
+  switch (command) {
+    case CMD_ECHO:{
+      for (size_t i = 1; i < args.size(); i++) {
+        std::cout << args[i];
+        if (i < args.size() - 1) {
+          std::cout << " ";
+        }
+      }
+      std::cout << std::endl;
+      break;
+    }
+    case CMD_TYPE: {
+      Command subCommand = parse_command(args[1]);
+      if (subCommand == NOT_BUILTIN) {
+        std::string path = find_executable(args[1]);
+        if (!path.empty()) {
+          std::cout << args[1] << " is " << path << std::endl;
+        } else {
+          std::cout << args[1] << ": not found\n";
+        }
+      } else {
+        std::cout << args[1] << " is a shell builtin\n";
+      }
+      break;
+    }
+    case NOT_BUILTIN: {
+      std::string path = find_executable(args[0]);
+      if (!path.empty()) {
+        // Convert string arguments to c strings
+        const char* argv[args.size() + 1];
+        for (size_t i = 0; i < args.size(); i++) {
+          argv[i] = args[i].c_str();
+        }
+        argv[args.size()] = nullptr; // Null-terminate the array
+        // Execute the file
+        pid_t pid = fork();
+        if (pid == 0) {
+          execv(path.c_str(), (char* const*) argv);
+        } else if (pid > 0) {
+          waitpid(pid, nullptr, 0);
+        } else {
+          std::cerr << "Failed to fork process\n";
+        }
+      } else {
+        std::cerr << args[0] << ": command not found\n";
+      }
+      break;
+    }
+    case CMD_PWD: {
+      //size is arbitrary, but should be large enough for most paths
+      char cwd[1024];
+      if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::cout << cwd << std::endl;
+      } else {
+        std::cerr << "Error getting current working directory\n";
+      }
+      break;
+    }
+    case CMD_CD: {
+      std::string path = args[1] != "~" ? args[1] : std::getenv("HOME");
+      if (chdir(path.c_str()) != 0) {
+        std::cerr << "cd: " << path << ": No such file or directory\n";
+      }
+      break;
+    }
+    case CMD_CMPLT: {
+      if (args[1] == "-p") {
+        if (customCompletions.find(args[2]) != customCompletions.end()) {
+          std::cout << "complete -C '" << customCompletions[args[2]] << "' " << args[2] << std::endl;
+        } else {
+          std::cerr << "complete: " << args[2] << ": no completion specification" << std::endl;
+        }
+      } else if (args[1] == "-C") {
+        customCompletions[args[3]] = args[2];
+      } else if (args[1] == "-r") {
+        customCompletions.erase(args[2]);
+      } else {
+        std::cerr << "complete: invalid option " << args[1] << std::endl;
+      }
+      break;
+    }
+    case CMD_JOBS: {
+      break;
+    }
+    default:
+      std::cerr << args[0] << ": command not found\n";
+      break;
+  }
+}
