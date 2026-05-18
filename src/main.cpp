@@ -211,9 +211,13 @@ Trie initCmdTrie() {
 
 char** attemptCompletion(const char* text, int start, int end) {
   rl_attempted_completion_over = 1;
-  char *commandEnd = strchr(rl_line_buffer, ' ');
-  std::string command = commandEnd ? std::string(rl_line_buffer, commandEnd - rl_line_buffer) : "";
-  if (command != "" && customCompletions.find(command) != customCompletions.end()) {
+  std::stringstream ss(rl_line_buffer);
+  std::vector<std::string> tokens;
+  std::string token;
+  while (ss >> token) {
+    tokens.push_back(token);
+  }
+  if (customCompletions.find(tokens[0]) != customCompletions.end()) {
     pipe(pipefd);
     int pid = fork();
     if (pid == 0) {
@@ -221,7 +225,13 @@ char** attemptCompletion(const char* text, int start, int end) {
       close(pipefd[0]); // Close read end in child
       dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
       close(pipefd[1]); // Close original write end
-      execv(customCompletions[command].c_str(), nullptr);
+      const char *args[5];
+      args[0] = customCompletions[tokens[0]].c_str();
+      args[1] = tokens[0].c_str();
+      args[2] = tokens.back().c_str();
+      args[3] = tokens.size() > 2 ? tokens.at(tokens.size() - 2).c_str() : nullptr;
+      args[4] = nullptr;
+      execv(customCompletions[tokens[0]].c_str(), (char* const*) args);
     } else if (pid > 0) {
       waitpid(pid, nullptr, 0);
       close(pipefd[1]); // Close write end in parent
@@ -230,7 +240,7 @@ char** attemptCompletion(const char* text, int start, int end) {
       std::cerr << "Failed to fork process for custom completion\n";
     }
   }
-  if (start == 0 || strncmp(rl_line_buffer, "type", 4) == 0) { //only do command completion for first word or after type command
+  if (start == 0 || tokens[0] == "type") { //only do command completion for first word or after type command
     rl_completion_append_character = ' ';
     return rl_completion_matches(text, firstCompletion);
   } else {
