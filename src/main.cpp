@@ -404,8 +404,12 @@ void handleCMD(Command command, std::vector<std::string>& args) {
     case CMD_JOBS: {
       for(const Job& job : jobs) {
         std::cout << "[" << job.id << "] ";
-        if (&job == &jobs.back()) {
+        if (job.id == bckgrndJobs) {
           std::cout << "+ ";
+        } else if (job.id == bckgrndJobs - 1) {
+          std::cout << "- ";
+        } else {
+          std::cout << "  ";
         }
         std::cout << std::left << std::setw(24) << job.status << std::right << job.commandLine << std::endl;
       }
