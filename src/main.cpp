@@ -410,25 +410,23 @@ void handleCMD(Command command, std::vector<std::string>& args) {
     }
     case CMD_JOBS: {
       // print job list with status, remove done jobs from list, update status of running jobs
+      for (int i = 0; i < jobs.size(); i++) {
+        Job& job = jobs[i];
+        if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
+          job.status = "Running";
+        } else {
+          job.status = "Done";
+        }
+        std::string specialMarker = (i == jobs.size() - 1) ? "+ " : (i == jobs.size() - 2) ? "- " : "  ";
+        std::cout << "[" << job.id << "] " << specialMarker << std::left << std::setw(24) << job.status
+           << std::right << job.commandLine << std::endl;
+      }
       jobs.erase(
         std::remove_if(jobs.begin(), jobs.end(), [](Job& job) {
-          if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
-            job.status = "Running";
-          } else {
-            job.status = "Done";
-          }
-          std::cout << "[" << job.id << "] ";
-          if (job.id == bckgrndJobs) {
-            std::cout << "+ ";
-          } else if (job.id == bckgrndJobs - 1) {
-            std::cout << "- ";
-          } else {
-            std::cout << "  ";
-          }
-          std::cout << std::left << std::setw(24) << job.status << std::right << job.commandLine << std::endl;
           return job.status == "Done"; 
-      }), 
-      jobs.end());
+        }), 
+        jobs.end()
+      );
       break;
     }
     default:
