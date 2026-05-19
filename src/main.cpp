@@ -2,16 +2,18 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <dirent.h>
+#include <iomanip>
 
 #include "commands.h"
 #include "Trie.h"
 #include <unordered_map>
-#include <iomanip>
+
 
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
@@ -94,7 +96,12 @@ int main() {
         execv(path.c_str(), (char* const*) argv);
       } else if (pid > 0) {
         // Parent process does not wait for the child and continues to the next iteration of the loop
-        Job newJob = {bckgrndJobs, pid, commandLine, "Running"};
+        std::string fullCommandLine;
+        for (const std::string& arg : args) {
+          fullCommandLine += arg + " ";
+        }
+        fullCommandLine.pop_back(); // Remove trailing space
+        Job newJob = {bckgrndJobs, pid, fullCommandLine, ""}; //string is empty becasue current status is unknown
         jobs.push_back(newJob);
         std::cout << "[" << bckgrndJobs << "] " << pid << std::endl;
         continue;
@@ -402,17 +409,26 @@ void handleCMD(Command command, std::vector<std::string>& args) {
       break;
     }
     case CMD_JOBS: {
-      for(const Job& job : jobs) {
-        std::cout << "[" << job.id << "] ";
-        if (job.id == bckgrndJobs) {
-          std::cout << "+ ";
-        } else if (job.id == bckgrndJobs - 1) {
-          std::cout << "- ";
-        } else {
-          std::cout << "  ";
-        }
-        std::cout << std::left << std::setw(24) << job.status << std::right << job.commandLine << std::endl;
-      }
+      // print job list with status, remove done jobs from list, update status of running jobs
+      jobs.erase(
+        std::remove_if(jobs.begin(), jobs.end(), [](Job& job) {
+          if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
+            job.status = "Running";
+          } else {
+            job.status = "Done";
+          }
+          std::cout << "[" << job.id << "] ";
+          if (job.id == bckgrndJobs) {
+            std::cout << "+ ";
+          } else if (job.id == bckgrndJobs - 1) {
+            std::cout << "- ";
+          } else {
+            std::cout << "  ";
+          }
+          std::cout << std::left << std::setw(24) << job.status << std::right << job.commandLine << std::endl;
+          return job.status == "Done"; 
+      }), 
+      jobs.end());
       break;
     }
     default:
