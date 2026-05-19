@@ -18,16 +18,17 @@
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
 void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
-Trie initCmdTrie();
-char** attemptCompletion(const char* text, int start, int end);
-char* firstCompletion(const char* text, int state);
-char* fileCompletion(const char* text, int state);
+Trie init_cmd_trie();
+char** attempt_cmpltn(const char* text, int start, int end);
+char* first_cmpltn(const char* text, int state);
+char* file_cmpltn(const char* text, int state);
 int originalStdout = dup(STDOUT_FILENO);
 int originalStderr = dup(STDERR_FILENO);
-char *customCMPLT(const char* text, int state);
-void handleCMD(Command command, std::vector<std::string>& args);
+char *custom_cmpltn(const char* text, int state);
+void handle_cmd(Command command, std::vector<std::string>& args);
+void handle_jobs(bool showRunning);
 
-Trie commandTrie = initCmdTrie();
+Trie commandTrie = init_cmd_trie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
 int pipefd[2]; //pipe for custom completion, pipefd[0] is read end, pipefd[1] is write end
 int bckgrndJobs = 0; //number of background jobs called
@@ -45,11 +46,12 @@ int main() {
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
   //auto completion using readline and Trie
-  rl_attempted_completion_function = attemptCompletion;
+  rl_attempted_completion_function = attempt_cmpltn;
   while (true) {
     //restore stdout and stderr
     dup2(originalStdout, STDOUT_FILENO);
     dup2(originalStderr, STDERR_FILENO);
+    handle_jobs(false); //check for completed jobs
     std::string commandLine;
     commandLine = readline("$ ");
     std::stringstream commandStream(commandLine);
@@ -79,7 +81,7 @@ int main() {
       if (pid == 0) {
         Command command = parse_command(args[0]);
         if (command != NOT_BUILTIN) {
-          handleCMD(command, args);
+          handle_cmd(command, args);
           exit(0);
         }
         std::string path = find_executable(args[0]);
@@ -114,7 +116,7 @@ int main() {
     if (command == CMD_EXIT) {
       break;
     }
-    handleCMD(command, args);
+    handle_cmd(command, args);
   }
   close(originalStdout);
   close(originalStderr);
@@ -167,7 +169,7 @@ void redirect_output(std::stringstream& commandStream, int replacingFD, const ch
 }
 
 //initialize the Trie with builtin commands for auto-completion
-Trie initCmdTrie() {
+Trie init_cmd_trie() {
   Trie commandTrie;
   commandTrie.insert("echo");
   commandTrie.insert("exit");
@@ -178,7 +180,7 @@ Trie initCmdTrie() {
   return commandTrie;
 }
 
-char** attemptCompletion(const char* text, int start, int end) {
+char** attempt_cmpltn(const char* text, int start, int end) {
   rl_attempted_completion_over = 1;
   std::stringstream ss(rl_line_buffer);
   std::vector<std::string> tokens;
@@ -208,21 +210,21 @@ char** attemptCompletion(const char* text, int start, int end) {
     } else if (pid > 0) {
       waitpid(pid, nullptr, 0);
       close(pipefd[1]); // Close write end in parent
-      return rl_completion_matches(text, customCMPLT);
+      return rl_completion_matches(text, custom_cmpltn);
     } else {
       std::cerr << "Failed to fork process for custom completion\n";
     }
   }
   if (start == 0 || tokens[0] == "type") { //only do command completion for first word or after type command
     rl_completion_append_character = ' ';
-    return rl_completion_matches(text, firstCompletion);
+    return rl_completion_matches(text, first_cmpltn);
   } else {
     rl_completion_append_character = '\0';
-    return rl_completion_matches(text, fileCompletion);
+    return rl_completion_matches(text, file_cmpltn);
   }
 }
 
-char *customCMPLT(const char* text, int state) {
+char *custom_cmpltn(const char* text, int state) {
   static std::vector<std::string> matches;
   static size_t matchIndex;
   if (state == 0) {
@@ -246,7 +248,7 @@ char *customCMPLT(const char* text, int state) {
 }
 
 //auto completion for commands and executables in PATH
-char* firstCompletion(const char* text, int state) {
+char* first_cmpltn(const char* text, int state) {
   static std::vector<std::string> matches;
   static size_t matchIndex;
 
@@ -286,7 +288,7 @@ char* firstCompletion(const char* text, int state) {
   }
 }
 
-char* fileCompletion(const char* text, int state) {
+char* file_cmpltn(const char* text, int state) {
   static std::vector<std::string> matches;
   static size_t matchIndex;
   if (state == 0) {
@@ -326,7 +328,7 @@ char* fileCompletion(const char* text, int state) {
   }
 }
 
-void handleCMD(Command command, std::vector<std::string>& args) {
+void handle_cmd(Command command, std::vector<std::string>& args) {
   switch (command) {
     case CMD_ECHO:{
       for (size_t i = 1; i < args.size(); i++) {
@@ -409,28 +411,32 @@ void handleCMD(Command command, std::vector<std::string>& args) {
       break;
     }
     case CMD_JOBS: {
-      // print job list with status, remove done jobs from list, update status of running jobs
-      for (int i = 0; i < jobs.size(); i++) {
-        Job& job = jobs[i];
-        if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
-          job.status = "Running";
-        } else {
-          job.status = "Done";
-        }
-        std::string specialMarker = (i == jobs.size() - 1) ? "+ " : (i == jobs.size() - 2) ? "- " : "  ";
-        std::cout << "[" << job.id << "] " << specialMarker << std::left << std::setw(24) << job.status
-           << std::right << job.commandLine << std::endl;
-      }
-      jobs.erase(
-        std::remove_if(jobs.begin(), jobs.end(), [](Job& job) {
-          return job.status == "Done"; 
-        }), 
-        jobs.end()
-      );
+      handle_jobs(true);
       break;
     }
     default:
       std::cerr << args[0] << ": command not found\n";
       break;
   }
+}
+
+void handle_jobs(bool showRunning) {
+  // print job list, remove done jobs from list, update status of running jobs
+  for (int i = 0; i < jobs.size(); i++) {
+    Job& job = jobs[i];
+    if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
+      job.status = "Running";
+    } else {
+      job.status = "Done";
+    }
+    std::string specialMarker = (i == jobs.size() - 1) ? "+ " : (i == jobs.size() - 2) ? "- " : "  ";
+    std::cout << "[" << job.id << "] " << specialMarker << std::left << std::setw(24) << job.status
+        << std::right << job.commandLine << std::endl;
+  }
+  jobs.erase(
+    std::remove_if(jobs.begin(), jobs.end(), [](Job& job) {
+      return job.status == "Done"; 
+    }), 
+    jobs.end()
+  );    
 }
