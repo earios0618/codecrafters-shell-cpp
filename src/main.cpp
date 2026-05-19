@@ -425,6 +425,7 @@ void handle_jobs(bool showRunning) {
   for (int i = 0; i < jobs.size(); i++) {
     Job& job = jobs[i];
     if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
+      if (!showRunning) continue;
       job.status = "Running";
     } else {
       job.status = "Done";
