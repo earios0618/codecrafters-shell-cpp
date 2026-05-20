@@ -13,6 +13,7 @@
 #include "commands.h"
 #include "Trie.h"
 #include <unordered_map>
+#include <set>
 
 
 Command parse_command(std::string commandLine);
@@ -39,6 +40,7 @@ struct Job {
   std::string status;
 };
 std::vector<Job> jobs; //storage for background jobs
+std::set<int> availIDs; //storage for available job IDs
 
 //TODO: make exit case more like others using direct call to exit(), fix extra space in file auto completion double tab list
 int main() {
@@ -76,7 +78,6 @@ int main() {
     }
     if (args.back() == "&") {
       args.pop_back();
-      bckgrndJobs++;
       int pid = fork();
       if (pid == 0) {
         Command command = parse_command(args[0]);
@@ -103,9 +104,16 @@ int main() {
           fullCommandLine += arg + " ";
         }
         fullCommandLine.pop_back(); // Remove trailing space
-        Job newJob = {bckgrndJobs, pid, fullCommandLine, ""}; //string is empty becasue current status is unknown
+        int jobID;
+        if (!availIDs.empty()) {
+          jobID = *availIDs.begin();
+          availIDs.erase(availIDs.begin());
+        } else {         
+          jobID = ++bckgrndJobs;
+        }
+        Job newJob = {jobID, pid, fullCommandLine, ""}; //string is empty becasue current status is unknown
         jobs.push_back(newJob);
-        std::cout << "[" << bckgrndJobs << "] " << pid << std::endl;
+        std::cout << "[" << jobID << "] " << pid << std::endl;
         continue;
       } else {
         std::cerr << "Failed to fork process for background execution\n";
@@ -429,6 +437,7 @@ void handle_jobs(bool showRunning) {
       job.status = "Running";
     } else {
       job.status = "Done";
+      availIDs.insert(job.id);
     }
     std::string specialMarker = (i == jobs.size() - 1) ? "+ " : (i == jobs.size() - 2) ? "- " : "  ";
     std::cout << "[" << job.id << "] " << specialMarker << std::left << std::setw(24) << job.status
