@@ -9,11 +9,12 @@
 #include <readline/history.h>
 #include <dirent.h>
 #include <iomanip>
+#include <set>
 
 #include "commands.h"
 #include "Trie.h"
 #include <unordered_map>
-#include <set>
+
 
 
 Command parse_command(std::string commandLine);
