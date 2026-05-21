@@ -29,6 +29,8 @@ int originalStderr = dup(STDERR_FILENO);
 char *custom_cmpltn(const char* text, int state);
 void handle_cmd(Command command, std::vector<std::string>& args);
 void handle_jobs(bool showRunning);
+void parse_args(std::stringstream& commandStream, std::vector<std::string>& args);
+void handle_bckgrnd(std::vector<std::string>& args);
 
 Trie commandTrie = init_cmd_trie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
@@ -60,65 +62,74 @@ int main() {
     std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
-    std::string arg;
-    while (commandStream >> arg) {
-      if ((arg == ">" || arg == "1>") && args.size() > 0) {
-        redirect_output(commandStream, STDOUT_FILENO, "w");
-        continue;
-      } else if(arg == "2>" && args.size() > 0) {
-        redirect_output(commandStream, STDERR_FILENO, "w");
-        continue;
-      } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
-        redirect_output(commandStream, STDOUT_FILENO, "a");
-        continue;
-      } else if(arg == "2>>" && args.size() > 0) {
-        redirect_output(commandStream, STDERR_FILENO, "a");
-        continue;
-      }
-      args.push_back(arg);
-    }
-    if (args.back() == "&") {
-      args.pop_back();
-      int pid = fork();
-      if (pid == 0) {
-        Command command = parse_command(args[0]);
+    parse_args(commandStream, args);
+    auto pipeFirst = std::find(args.begin(), args.end(), "|");
+    //if '|' in command line, pipeline
+    if (pipeFirst != args.end()){
+      std::vector<string> leftCmd(args.begin(), pipeFirst);
+      std::vector<string> rightCmd(pipeFirst + 1, args.end());
+      pipe(pipefd);
+      int pid1 = fork();
+      if (pid1 == 0) {
+        //child for left command
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+        Command command = parse_command(leftCmd[0]);
         if (command != NOT_BUILTIN) {
-          handle_cmd(command, args);
+          handle_cmd(command, leftCmd);
           exit(0);
         }
-        std::string path = find_executable(args[0]);
+        std::string path = find_executable(leftCmd[0]);
         if (path.empty()) {
-          std::cerr << args[0] << ": command not found" << std::endl;
+          std::cerr << leftCmd[0] << ": command not found" << std::endl;
           exit(1);
         }
         // Convert string arguments to c strings
-        const char* argv[args.size() + 1];
-        for (size_t i = 0; i < args.size(); i++) {
-          argv[i] = args[i].c_str();
+        const char* argv[leftCmd.size() + 1];
+        for (size_t i = 0; i < leftCmd.size(); i++) {
+          argv[i] = leftCmd[i].c_str();
         } 
-        argv[args.size()] = nullptr; // Null-terminate the array
+        argv[leftCmd.size()] = nullptr; // Null-terminate the array
         execv(path.c_str(), (char* const*) argv);
-      } else if (pid > 0) {
-        // Parent process does not wait for the child and continues to the next iteration of the loop
-        std::string fullCommandLine;
-        for (const std::string& arg : args) {
-          fullCommandLine += arg + " ";
-        }
-        fullCommandLine.pop_back(); // Remove trailing space
-        int jobID;
-        if (!availIDs.empty()) {
-          jobID = *availIDs.begin();
-          availIDs.erase(availIDs.begin());
-        } else {         
-          jobID = ++bckgrndJobs;
-        }
-        Job newJob = {jobID, pid, fullCommandLine, ""}; //string is empty becasue current status is unknown
-        jobs.push_back(newJob);
-        std::cout << "[" << jobID << "] " << pid << std::endl;
-        continue;
-      } else {
-        std::cerr << "Failed to fork process for background execution\n";
+      } else if (pid1 == -1) {
+        std::cerr << "Failed to fork process\n";
       }
+      int pid2 = fork();
+      if (pid2 == 0) {
+        //child for right command
+        close(pipefd[1]);
+        dup2(pipefd[0], STDIN_FILENO);
+        close(pipefd[0]);
+        Command command = parse_command(rightCmd[0]);
+        if (command != NOT_BUILTIN) {
+          handle_cmd(command, rightCmd);
+          exit(0);
+        }
+        std::string path = find_executable(rightCmd[0]);
+        if (path.empty()) {
+          std::cerr << rightCmd[0] << ": command not found" << std::endl;
+          exit(1);
+        }
+        // Convert string arguments to c strings
+        const char* argv[rightCmd.size() + 1];
+        for (size_t i = 0; i < leftCmd.size(); i++) {
+          argv[i] = rightCmd[i].c_str();
+        } 
+        argv[rightCmd.size()] = nullptr; // Null-terminate the array
+        execv(path.c_str(), (char* const*) argv);
+      } else if (pid2 == -1) {
+        std::cerr << "Failed to fork process\n";
+      }
+      close(pipefd[0]);
+      close(pipefd[1]);
+      waitpid(pid1, nullptr, 0);
+      waitpid(pid2, nullptr, 0);
+      continue;
+    }
+    if (args.back() == "&") {
+      handle_bckgrnd(args);
+      continue;
     }
     Command command = parse_command(args[0]);
     //special command case
@@ -450,4 +461,67 @@ void handle_jobs(bool showRunning) {
     }), 
     jobs.end()
   );    
+}
+
+void parse_args(std::stringstream& commandStream, std::vector<std::string>& args) {
+  std::string arg;
+  while (commandStream >> arg) {
+    if ((arg == ">" || arg == "1>") && args.size() > 0) {
+      redirect_output(commandStream, STDOUT_FILENO, "w");
+      continue;
+    } else if(arg == "2>" && args.size() > 0) {
+      redirect_output(commandStream, STDERR_FILENO, "w");
+      continue;
+    } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
+      redirect_output(commandStream, STDOUT_FILENO, "a");
+      continue;
+    } else if(arg == "2>>" && args.size() > 0) {
+      redirect_output(commandStream, STDERR_FILENO, "a");
+      continue;
+    }
+    args.push_back(arg);
+  }
+}
+
+void handle_bckgrnd(std::vector<std::string>& args){
+  args.pop_back();
+  int pid = fork();
+  if (pid == 0) {
+    Command command = parse_command(args[0]);
+    if (command != NOT_BUILTIN) {
+      handle_cmd(command, args);
+      exit(0);
+    }
+    std::string path = find_executable(args[0]);
+    if (path.empty()) {
+      std::cerr << args[0] << ": command not found" << std::endl;
+      exit(1);
+    }
+    // Convert string arguments to c strings
+    const char* argv[args.size() + 1];
+    for (size_t i = 0; i < args.size(); i++) {
+      argv[i] = args[i].c_str();
+    } 
+    argv[args.size()] = nullptr; // Null-terminate the array
+    execv(path.c_str(), (char* const*) argv);
+  } else if (pid > 0) {
+    // Parent process does not wait for the child and continues to the next iteration of the loop
+    std::string fullCommandLine;
+    for (const std::string& arg : args) {
+      fullCommandLine += arg + " ";
+    }
+    fullCommandLine.pop_back(); // Remove trailing space
+    int jobID;
+    if (!availIDs.empty()) {
+      jobID = *availIDs.begin();
+      availIDs.erase(availIDs.begin());
+    } else {         
+      jobID = ++bckgrndJobs;
+    }
+    Job newJob = {jobID, pid, fullCommandLine, ""}; //string is empty becasue current status is unknown
+    jobs.push_back(newJob);
+    std::cout << "[" << jobID << "] " << pid << std::endl;
+  } else {
+    std::cerr << "Failed to fork process for background execution\n";
+  } 
 }
