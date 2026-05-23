@@ -15,8 +15,6 @@
 #include "Trie.h"
 #include <unordered_map>
 
-
-
 Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
 void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
@@ -24,14 +22,18 @@ Trie init_cmd_trie();
 char** attempt_cmpltn(const char* text, int start, int end);
 char* first_cmpltn(const char* text, int state);
 char* file_cmpltn(const char* text, int state);
-int originalStdout = dup(STDOUT_FILENO);
-int originalStderr = dup(STDERR_FILENO);
 char *custom_cmpltn(const char* text, int state);
-void handle_cmd(Command command, std::vector<std::string>& args);
+void handle_builtin(Command command, std::vector<std::string>& args);
 void handle_jobs(bool showRunning);
 void parse_args(std::stringstream& commandStream, std::vector<std::string>& args);
 void handle_bckgrnd(std::vector<std::string>& args);
+void handle_exec(std::vector<string>& args);
+void handle_pipe(std::vector<std::string>& args, std::vector<std::string>::iterator& pipeIndex);
 
+int originalStdout = dup(STDOUT_FILENO);
+int originalStderr = dup(STDERR_FILENO);
+int originalStdin = dup(STDIN_FILENO);
+bool keepRunning = true;
 Trie commandTrie = init_cmd_trie();
 unordered_map<std::string, std::string> customCompletions; //storage for custom completions for complete command
 int pipefd[2]; //pipe for custom completion, pipefd[0] is read end, pipefd[1] is write end
@@ -45,14 +47,14 @@ struct Job {
 std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
 
-//TODO: make exit case more like others using direct call to exit(), fix extra space in file auto completion double tab list
+//TODO: fix extra space in file auto completion double tab list, fix hidden files
 int main() {
   // Flush after every std::cout / std:cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
   //auto completion using readline and Trie
   rl_attempted_completion_function = attempt_cmpltn;
-  while (true) {
+  while (keepRunning) {
     //restore stdout and stderr
     dup2(originalStdout, STDOUT_FILENO);
     dup2(originalStderr, STDERR_FILENO);
@@ -63,83 +65,35 @@ int main() {
     //populate arguments, first argument is command
     std::vector<std::string> args;
     parse_args(commandStream, args);
-    auto pipeFirst = std::find(args.begin(), args.end(), "|");
+    auto pipeIndex = std::find(args.begin(), args.end(), "|");
     //if '|' in command line, pipeline
-    if (pipeFirst != args.end()){
-      std::vector<string> leftCmd(args.begin(), pipeFirst);
-      std::vector<string> rightCmd(pipeFirst + 1, args.end());
-      pipe(pipefd);
-      int pid1 = fork();
-      if (pid1 == 0) {
-        //child for left command
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        Command command = parse_command(leftCmd[0]);
-        if (command != NOT_BUILTIN) {
-          handle_cmd(command, leftCmd);
-          exit(0);
-        }
-        std::string path = find_executable(leftCmd[0]);
-        if (path.empty()) {
-          std::cerr << leftCmd[0] << ": command not found" << std::endl;
-          exit(1);
-        }
-        // Convert string arguments to c strings
-        const char* argv[leftCmd.size() + 1];
-        for (size_t i = 0; i < leftCmd.size(); i++) {
-          argv[i] = leftCmd[i].c_str();
-        } 
-        argv[leftCmd.size()] = nullptr; // Null-terminate the array
-        execv(path.c_str(), (char* const*) argv);
-      } else if (pid1 == -1) {
-        std::cerr << "Failed to fork process\n";
-      }
-      int pid2 = fork();
-      if (pid2 == 0) {
-        //child for right command
-        close(pipefd[1]);
-        dup2(pipefd[0], STDIN_FILENO);
-        close(pipefd[0]);
-        Command command = parse_command(rightCmd[0]);
-        if (command != NOT_BUILTIN) {
-          handle_cmd(command, rightCmd);
-          exit(0);
-        }
-        std::string path = find_executable(rightCmd[0]);
-        if (path.empty()) {
-          std::cerr << rightCmd[0] << ": command not found" << std::endl;
-          exit(1);
-        }
-        // Convert string arguments to c strings
-        const char* argv[rightCmd.size() + 1];
-        for (size_t i = 0; i < leftCmd.size(); i++) {
-          argv[i] = rightCmd[i].c_str();
-        } 
-        argv[rightCmd.size()] = nullptr; // Null-terminate the array
-        execv(path.c_str(), (char* const*) argv);
-      } else if (pid2 == -1) {
-        std::cerr << "Failed to fork process\n";
-      }
-      close(pipefd[0]);
-      close(pipefd[1]);
-      waitpid(pid1, nullptr, 0);
-      waitpid(pid2, nullptr, 0);
+    if (pipeIndex != args.end()){
+      handle_pipe(args, pipeIndex);
       continue;
     }
+    //background commands
     if (args.back() == "&") {
+      args.pop_back();
       handle_bckgrnd(args);
       continue;
     }
+    //normal command execution
     Command command = parse_command(args[0]);
-    //special command case
-    if (command == CMD_EXIT) {
-      break;
+    if (command == NOT_BUILTIN) {
+      int pid = fork();
+      if (pid == 0) {
+        handle_exec(args);
+      } else if (pid == -1) {
+        std::cerr << "Failed to fork process\n";
+      }
+      waitpid(pid, nullptr, 0);
+    } else {
+      handle_builtin(command, args);
     }
-    handle_cmd(command, args);
   }
   close(originalStdout);
   close(originalStderr);
+  close(originalStdin);
 }
 
 //return enum for string command
@@ -175,7 +129,7 @@ std::string find_executable(std::string name) {
       return full_path;
     }
   }
-  return ""; // Return empty string if not found
+  return "";
 }
 
 //redirect replacingFD to next argument in stream which should be a file
@@ -208,40 +162,40 @@ char** attempt_cmpltn(const char* text, int start, int end) {
   while (ss >> token) {
     tokens.push_back(token);
   }
-  if (customCompletions.find(tokens[0]) != customCompletions.end()) {
-    pipe(pipefd);
-    int pid = fork();
-    if (pid == 0) {
-      // Execute the custom completion command and capture its output
-      close(pipefd[0]); // Close read end in child
-      dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
-      close(pipefd[1]); // Close original write end
-      const char *args[5];
-      std::string fourthArg = tokens.size() > 1 ? tokens.at(tokens.size() - 2).c_str() : "";
-      args[0] = customCompletions[tokens[0]].c_str();
-      args[1] = tokens[0].c_str();
-      args[2] = tokens.back().c_str();
-      args[3] = fourthArg.c_str();
-      args[4] = nullptr;
-      setenv("COMP_LINE", rl_line_buffer, 1);
-      std::string compPointStr = std::to_string(rl_point);
-      setenv("COMP_POINT", compPointStr.c_str(), 1);
-      execv(customCompletions[tokens[0]].c_str(), (char* const*) args);
-    } else if (pid > 0) {
-      waitpid(pid, nullptr, 0);
-      close(pipefd[1]); // Close write end in parent
-      return rl_completion_matches(text, custom_cmpltn);
+  //no custom completion
+  if (customCompletions.find(tokens[0]) == customCompletions.end()) {
+    if (start == 0 || tokens[0] == "type") { //only do command completion for first word or after type command
+      rl_completion_append_character = ' ';
+      return rl_completion_matches(text, first_cmpltn);
     } else {
-      std::cerr << "Failed to fork process for custom completion\n";
+      rl_completion_append_character = '\0';
+      return rl_completion_matches(text, file_cmpltn);
     }
   }
-  if (start == 0 || tokens[0] == "type") { //only do command completion for first word or after type command
-    rl_completion_append_character = ' ';
-    return rl_completion_matches(text, first_cmpltn);
+  //custom completion
+  pipe(pipefd);
+  int pid = fork();
+  if (pid == 0) {
+    // Execute the custom completion command
+    close(pipefd[0]); // Close read end in child
+    dup2(pipefd[1], STDOUT_FILENO); // Redirect stdout to pipe
+    close(pipefd[1]); // Close original write end
+    std::string fourthArg = tokens.size() > 1 ? tokens.at(tokens.size() - 2).c_str() : "";
+    const char *args[5] = { customCompletions[tokens[0]].c_str(), tokens[0].c_str(), tokens.back().c_str(), 
+                                              fourthArg.c_str(), nullptr };
+    setenv("COMP_LINE", rl_line_buffer, 1);
+    std::string compPointStr = std::to_string(rl_point);
+    setenv("COMP_POINT", compPointStr.c_str(), 1);
+    execv(args[0], (char* const*) args);
+  } else if (pid > 0) {
+    //get the output of custom completion
+    waitpid(pid, nullptr, 0);
+    close(pipefd[1]); // Close write end in parent
+    return rl_completion_matches(text, custom_cmpltn);
   } else {
-    rl_completion_append_character = '\0';
-    return rl_completion_matches(text, file_cmpltn);
+    std::cerr << "Failed to fork process for custom completion\n";
   }
+  return nullptr;
 }
 
 char *custom_cmpltn(const char* text, int state) {
@@ -286,18 +240,16 @@ char* first_cmpltn(const char* text, int state) {
     std::string path;
     while (std::getline(ss_path, path, ':')) {
       DIR* dir = opendir(path.c_str());
-      if (dir) {
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-          std::string fileName(entry->d_name);
-          if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
-            if (access((path + '/' + fileName).c_str(), X_OK) == 0) {
-              matches.push_back(fileName);
-            }
-          }
+      if (!dir) continue;
+      struct dirent* entry;
+      while ((entry = readdir(dir)) != nullptr) {
+        std::string fileName(entry->d_name);
+        if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0 && 
+                                        access((path + '/' + fileName).c_str(), X_OK) == 0) {
+          matches.push_back(fileName);
         }
-        closedir(dir);
       }
+      closedir(dir);
     }
   }
 
@@ -322,24 +274,21 @@ char* file_cmpltn(const char* text, int state) {
       prefix = prefix.substr(lastSlash + 1);
     }
     DIR* directory = opendir(dir.c_str());
-    if (directory) {
-      struct dirent* entry;
-      while ((entry = readdir(directory)) != nullptr) {
-        std::string fileName(entry->d_name);
-        if (fileName == "." || fileName == "..") continue;
-        if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
-          std::string fullPath = dir + '/' + fileName;
-          std::string returnMatch = dir == "." ? fileName : fullPath;
-          // Check if it's a directory or file
-          if (entry->d_type == DT_DIR) {
-            matches.push_back(returnMatch + "/"); // Append '/' for directories
-          } else {
-            matches.push_back(returnMatch + " "); // Append ' ' for files
-          }
-        }
-      }
-      closedir(directory);
+    if (!directory) {
+      return nullptr;
     }
+    struct dirent* entry;
+    while ((entry = readdir(directory)) != nullptr) {
+      std::string fileName(entry->d_name);
+      if (fileName == "." || fileName == "..") continue;
+      if (strncmp(fileName.c_str(), prefix.c_str(), prefix.size()) == 0) {
+        std::string returnMatch = dir == "." ? fileName : dir + '/' + fileName;
+        // Check if it's a directory or file
+        returnMatch = entry->d_type == DT_DIR ? returnMatch + "/" : returnMatch + " ";
+        matches.push_back(returnMatch);
+      }
+    }
+    closedir(directory);
   }
   if (matchIndex < matches.size()) {
     return strdup(matches[matchIndex++].c_str());
@@ -348,7 +297,7 @@ char* file_cmpltn(const char* text, int state) {
   }
 }
 
-void handle_cmd(Command command, std::vector<std::string>& args) {
+void handle_builtin(Command command, std::vector<std::string>& args) {
   switch (command) {
     case CMD_ECHO:{
       for (size_t i = 1; i < args.size(); i++) {
@@ -371,29 +320,6 @@ void handle_cmd(Command command, std::vector<std::string>& args) {
         }
       } else {
         std::cout << args[1] << " is a shell builtin\n";
-      }
-      break;
-    }
-    case NOT_BUILTIN: {
-      std::string path = find_executable(args[0]);
-      if (!path.empty()) {
-        // Convert string arguments to c strings
-        const char* argv[args.size() + 1];
-        for (size_t i = 0; i < args.size(); i++) {
-          argv[i] = args[i].c_str();
-        }
-        argv[args.size()] = nullptr; // Null-terminate the array
-        // Execute the file
-        pid_t pid = fork();
-        if (pid == 0) {
-          execv(path.c_str(), (char* const*) argv);
-        } else if (pid > 0) {
-          waitpid(pid, nullptr, 0);
-        } else {
-          std::cerr << "Failed to fork process\n";
-        }
-      } else {
-        std::cerr << args[0] << ": command not found\n";
       }
       break;
     }
@@ -434,6 +360,9 @@ void handle_cmd(Command command, std::vector<std::string>& args) {
       handle_jobs(true);
       break;
     }
+    case CMD_EXIT:
+      keepRunning = false;
+      break;
     default:
       std::cerr << args[0] << ": command not found\n";
       break;
@@ -445,8 +374,8 @@ void handle_jobs(bool showRunning) {
   for (int i = 0; i < jobs.size(); i++) {
     Job& job = jobs[i];
     if (waitpid(job.pid, nullptr, WNOHANG) == 0) {
-      if (!showRunning) continue;
       job.status = "Running";
+      if (!showRunning) continue;
     } else {
       job.status = "Done";
       availIDs.insert(job.id);
@@ -479,31 +408,21 @@ void parse_args(std::stringstream& commandStream, std::vector<std::string>& args
       redirect_output(commandStream, STDERR_FILENO, "a");
       continue;
     }
+    arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
     args.push_back(arg);
   }
 }
 
 void handle_bckgrnd(std::vector<std::string>& args){
-  args.pop_back();
   int pid = fork();
   if (pid == 0) {
     Command command = parse_command(args[0]);
-    if (command != NOT_BUILTIN) {
-      handle_cmd(command, args);
+    if (command == NOT_BUILTIN) {
+      handle_exec(args);
+    } else {
+      handle_builtin(command, args);
       exit(0);
     }
-    std::string path = find_executable(args[0]);
-    if (path.empty()) {
-      std::cerr << args[0] << ": command not found" << std::endl;
-      exit(1);
-    }
-    // Convert string arguments to c strings
-    const char* argv[args.size() + 1];
-    for (size_t i = 0; i < args.size(); i++) {
-      argv[i] = args[i].c_str();
-    } 
-    argv[args.size()] = nullptr; // Null-terminate the array
-    execv(path.c_str(), (char* const*) argv);
   } else if (pid > 0) {
     // Parent process does not wait for the child and continues to the next iteration of the loop
     std::string fullCommandLine;
@@ -524,4 +443,75 @@ void handle_bckgrnd(std::vector<std::string>& args){
   } else {
     std::cerr << "Failed to fork process for background execution\n";
   } 
+}
+
+void handle_exec(std::vector<string>& args){
+  std::string path = find_executable(args[0]);
+  if (!path.empty()) {
+    // Convert string arguments to c strings
+    const char* argv[args.size() + 1];
+    for (size_t i = 0; i < args.size(); i++) {
+      argv[i] = args[i].c_str();
+    }
+    argv[args.size()] = nullptr; // Null-terminate the array
+    // Execute the file
+    execv(path.c_str(), (char* const*) argv);
+  } else {
+    std::cerr << args[0] << ": command not found\n";
+    exit(1);
+  }
+}
+
+void handle_pipe(std::vector<std::string>& args, std::vector<std::string>::iterator& pipeIndex) {
+  //parse commands
+  std::vector<std::vector<string>> commands;
+  std::vector<std::string>::iterator start = args.begin();
+  while (true) {
+    std::vector<std::string>::iterator newStart = std::find(start, args.end(), "|");
+    std::vector<string> command(start, newStart);
+    commands.push_back(command);
+    if (newStart == args.end()) {
+      break;
+    }
+    start = newStart + 1;
+  }
+
+  std::vector<int> pids;
+  int pipeRead; //previous pipe read fd
+  //for every command
+  for (int i = 0; i < commands.size(); i++) {
+    //set up read pipe
+    if (i != 0) {
+      dup2(pipeRead, STDIN_FILENO);
+      close(pipeRead);
+    }
+    //set up pipe write
+    if (i != commands.size() - 1) {
+      int pipes[2];
+      pipe(pipes);
+      pipeRead = pipes[0];
+      dup2(pipes[1], STDOUT_FILENO);
+      close(pipes[1]);
+    } else {
+      dup2(originalStdout, STDOUT_FILENO); //restore stdout
+    }
+    int pid = fork();
+    if (pid == 0) {
+      Command cmd = parse_command(commands[i][0]);
+      if (cmd == NOT_BUILTIN) {
+        handle_exec(commands[i]);
+      } else {
+        handle_builtin(cmd, commands[i]);
+        exit(0);
+      }
+    } else if (pid == -1) {
+      std::cerr << "Failed to fork process\n";
+    }
+    pids.push_back(pid);
+  }
+  dup2(originalStdin, STDIN_FILENO); //restore stdin, really not neccesary as this is end of commands
+  //wait for every process
+  for (int pid : pids) {
+    waitpid(pid, nullptr, 0);
+  }
 }
