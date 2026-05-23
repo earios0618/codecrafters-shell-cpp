@@ -112,6 +112,8 @@ Command parse_command(std::string commandString) {
     return CMD_CMPLT;
   } else if (commandString == "jobs") {
     return CMD_JOBS;
+  } else if (commandString == "history") {
+    return CMD_HIST;
   } else {
     return NOT_BUILTIN;
   }
@@ -151,6 +153,7 @@ Trie init_cmd_trie() {
   commandTrie.insert("pwd");
   commandTrie.insert("cd");
   commandTrie.insert("complete");
+  commandTrie.insert("history");
   return commandTrie;
 }
 
