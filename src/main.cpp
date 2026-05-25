@@ -374,9 +374,16 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
           std::cerr << "declare: " << args[2] << ": not found" << std::endl;
         }
       } else {
-        if (!std::isalpha(args[1][0]) && args[1][0] != '_') { //extend check to rest of string
+        //check validity of variable name
+        if (!std::isalpha(args[1][0]) && args[1][0] != '_') {
           std::cerr << "declare: `" << args[1] << "': not a valid identifier" << std::endl;
           break;
+        }
+        for (char c : args[1]) {
+          if (!std::isalnum(c) && c != '_') {
+            std::cerr << "declare: `" << args[1] << "': not a valid identifier" << std::endl;
+            return;
+          }
         }
         //create variable
         auto pos = args[1].find("=");
