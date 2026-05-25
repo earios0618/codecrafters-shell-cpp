@@ -10,6 +10,7 @@
 #include <dirent.h>
 #include <iomanip>
 #include <set>
+#include <cctype>
 
 #include "commands.h"
 #include "Trie.h"
@@ -373,6 +374,10 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
           std::cerr << "declare: " << args[2] << ": not found" << std::endl;
         }
       } else {
+        if (!std::isalpha(args[1][0]) && args[1][0] != '_') { //extend check to rest of string
+          std::cerr << "declare: `" << args[1] << "': not a valid identifier" << std::endl;
+          break;
+        }
         //create variable
         auto pos = args[1].find("=");
         std::string varName(args[1], 0, pos);
