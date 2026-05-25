@@ -46,6 +46,7 @@ std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
 int histAppended = 0;
 
+
 //TODO: fix extra space in file auto completion double tab list, fix hidden files
 int main() {
   // Flush after every std::cout / std:cerr
@@ -55,6 +56,7 @@ int main() {
   rl_attempted_completion_function = attempt_cmpltn;
   using_history();
   read_history(std::getenv("HISTFILE"));
+  histAppended = history_length;
   while (keepRunning) {
     //restore stdout and stderr
     dup2(originalStdout, STDOUT_FILENO);
@@ -332,7 +334,7 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
     }
     case CMD_EXIT:
       keepRunning = false;
-      append_history(history_length , std::getenv("HISTFILE"));
+      append_history(history_length - histAppended, std::getenv("HISTFILE"));
       break;
     case CMD_HIST: {
       int start = 1;
