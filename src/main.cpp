@@ -363,6 +363,11 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
       }
       break;
     }
+    case CMD_DCLR:
+      if (args[1] == "-p") {
+        std::cerr << "declare: " << args[2] << ": not found" << std::endl;
+      }
+      break;
     default:
       std::cerr << args[0] << ": command not found\n";
       break;
