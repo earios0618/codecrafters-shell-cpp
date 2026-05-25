@@ -339,7 +339,9 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
           std::FILE* file = std::fopen(args[2].c_str(), "r");
           char buffer[256];
           while (std::fgets(buffer, sizeof(buffer), file)){
-            add_history(buffer);
+            std::string buffString(buffer);
+            buffString.pop_back(); // remove newline char
+            add_history(buffString.data());
           }
           break;
         } else {
