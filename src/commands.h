@@ -8,6 +8,7 @@ enum Command {
     CMD_CMPLT,
     CMD_JOBS,
     CMD_HIST,
+    CMD_DCLR,
     NOT_BUILTIN
 };
 

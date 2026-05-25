@@ -11,6 +11,7 @@ Trie init_cmd_trie() {
   commandTrie.insert("complete");
   commandTrie.insert("jobs");
   commandTrie.insert("history");
+  commandTrie.insert("declare");
   return commandTrie;
 }
 
@@ -24,5 +25,6 @@ Command parse_command(std::string commandString) {
   else if (commandString == "complete") { return CMD_CMPLT; } 
   else if (commandString == "jobs") { return CMD_JOBS; } 
   else if (commandString == "history") { return CMD_HIST; } 
+  else if (commandString == "declare") { return CMD_DCLR; }
   else { return NOT_BUILTIN; }
 }
