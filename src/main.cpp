@@ -45,6 +45,7 @@ struct Job {
 std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
 int histAppended = 0;
+std::unordered_map<std::string, std::string> shellVars;
 
 
 //TODO: fix extra space in file auto completion double tab list, fix hidden files
@@ -365,7 +366,18 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
     }
     case CMD_DCLR:
       if (args[1] == "-p") {
-        std::cerr << "declare: " << args[2] << ": not found" << std::endl;
+        //display variable
+        if (shellVars.find(args[2]) != shellVars.end()) {
+          std::cout << "declare -- " << args[2] << "=\"" << shellVars[args[2]] << "\"" << endl;
+        } else {
+          std::cerr << "declare: " << args[2] << ": not found" << std::endl;
+        }
+      } else {
+        //create variable
+        auto pos = args[1].find("=");
+        std::string varName(args[1], 0, pos);
+        std::string varValue(args[1], pos + 1);
+        shellVars[varName] = varValue;
       }
       break;
     default:
