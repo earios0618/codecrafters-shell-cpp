@@ -173,7 +173,7 @@ char *custom_cmpltn(const char* text, int state) {
     matches.clear();
     matchIndex = 0;
     std::FILE* infile = fdopen(pipefd[0], "r");
-    char buffer[4096];
+    char buffer[256];
     while (fgets(buffer, sizeof(buffer), infile)) {
       std::string line(buffer);
       line.pop_back(); // Remove newline character
@@ -334,7 +334,18 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
     case CMD_HIST: {
       int start = 1;
       if (args.size() > 1) {
-        start = history_length - std::stoi(args[1]) + 1; //replace with faster impl, from_char
+        if (args[1] == "-r") {
+          //add history from file
+          std::FILE* file = std::fopen(args[2].c_str(), "r");
+          char buffer[256];
+          while (std::fgets(buffer, sizeof(buffer), file)){
+            add_history(buffer);
+          }
+          break;
+        } else {
+          //show the last args[1] entries
+          start = history_length - std::stoi(args[1]) + 1; //replace with faster impl, from_char
+        }
       }
       for (int i = start; i <= history_length; i++) {
         std::cout << "\t" << i << " " << history_get(i)->line << std::endl;
