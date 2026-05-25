@@ -54,6 +54,7 @@ int main() {
   //auto completion using readline and Trie
   rl_attempted_completion_function = attempt_cmpltn;
   using_history();
+  read_history(std::getenv("HISTFILE"));
   while (keepRunning) {
     //restore stdout and stderr
     dup2(originalStdout, STDOUT_FILENO);
