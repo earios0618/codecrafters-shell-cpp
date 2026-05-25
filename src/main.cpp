@@ -44,6 +44,7 @@ struct Job {
 };
 std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
+int histAppended = 0;
 
 //TODO: fix extra space in file auto completion double tab list, fix hidden files
 int main() {
@@ -344,7 +345,8 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
           break;
         } else if (args[1] == "-a") {
           //append history to file
-          append_history(history_length, args[2].c_str());
+          append_history(history_length - histAppended, args[2].c_str());
+          histAppended = history_length;
           break;
         }
         else {
