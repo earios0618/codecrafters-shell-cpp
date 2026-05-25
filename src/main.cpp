@@ -435,12 +435,15 @@ void parse_args(std::stringstream& commandStream, std::vector<std::string>& args
     } else if(arg == "2>>" && args.size() > 0) {
       redirect_output(commandStream, STDERR_FILENO, "a");
       continue;
-    } else if (arg[0] == '$') {
-      std::string varName(arg, 1);
-      if (shellVars.find(varName) != shellVars.end()) {
-        arg = shellVars[varName];
-      } else {
-        arg = "";
+    }
+    for (int i = 0; i < arg.size(); i++) {
+      if (arg[i] == '$') {
+        std::string varName(&arg[i + 1]);
+        if (shellVars.find(varName) != shellVars.end()) {
+          arg.replace(i, varName.size() + 1, shellVars[varName]);
+        } else {
+          arg.replace(i, varName.size() + 1, ""); //replace with empty string if variable not found
+        }
       }
     }
     arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
