@@ -44,7 +44,6 @@ struct Job {
 };
 std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
-std::vector<std::string> history;
 
 //TODO: fix extra space in file auto completion double tab list, fix hidden files
 int main() {
@@ -53,6 +52,7 @@ int main() {
   std::cerr << std::unitbuf;
   //auto completion using readline and Trie
   rl_attempted_completion_function = attempt_cmpltn;
+  using_history();
   while (keepRunning) {
     //restore stdout and stderr
     dup2(originalStdout, STDOUT_FILENO);
@@ -60,7 +60,7 @@ int main() {
     handle_jobs(false); //check for completed jobs
     std::string commandLine;
     commandLine = readline("$ ");
-    history.push_back(commandLine);
+    add_history(commandLine.data());
     std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
@@ -332,12 +332,12 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
       keepRunning = false;
       break;
     case CMD_HIST: {
-      int start = 0;
+      int start = 1;
       if (args.size() > 1) {
-        start = history.size() - std::stoi(args[1]); //replace with faster impl
+        start = history_length - std::stoi(args[1]) + 1; //replace with faster impl, from_char
       }
-      for (int i = start; i < history.size(); i++) {
-        std::cout << "\t" << i + 1 << " " << history[i] << std::endl;
+      for (int i = start; i <= history_length; i++) {
+        std::cout << "\t" << i << " " << history_get(i)->line << std::endl;
       }
       break;
     }
