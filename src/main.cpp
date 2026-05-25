@@ -342,7 +342,12 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
           //write history to file
           write_history(args[2].c_str());
           break;
-        } else {
+        } else if (args[1] == "-a") {
+          //append history to file
+          append_history(history_length, args[2].c_str());
+          break;
+        }
+        else {
           //show the last args[1] entries
           start = history_length - std::stoi(args[1]) + 1; //replace with faster impl, from_char
         }
