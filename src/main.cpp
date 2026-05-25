@@ -332,6 +332,7 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
     }
     case CMD_EXIT:
       keepRunning = false;
+      write_history(std::getenv("HISTFILE"));
       break;
     case CMD_HIST: {
       int start = 1;
