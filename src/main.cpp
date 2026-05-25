@@ -332,12 +332,12 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
       keepRunning = false;
       break;
     case CMD_HIST: {
-      int start = 1;
+      int start = 0;
       if (args.size() > 1) {
-        start = history.size() - std::stoi(args[1]);
+        start = history.size() - std::stoi(args[1]); //replace with faster impl
       }
-      for (int i = start; i <= history.size(); i++) {
-        std::cout << "\t" << i << " " << history[i - 1] << std::endl;
+      for (int i = start; i < history.size(); i++) {
+        std::cout << "\t" << i + 1 << " " << history[i] << std::endl;
       }
       break;
     }
