@@ -366,28 +366,27 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
       break;
     }
     case CMD_DCLR:
-      if (args[1] == "-p") {
-        //display variable
+      if (args[1] == "-p") { //display variable
         if (shellVars.find(args[2]) != shellVars.end()) {
           std::cout << "declare -- " << args[2] << "=\"" << shellVars[args[2]] << "\"" << endl;
         } else {
           std::cerr << "declare: " << args[2] << ": not found" << std::endl;
         }
-      } else {
+      } else { //create variable
+        auto pos = args[1].find("=");
+        std::string varName(args[1], 0, pos);
         //check validity of variable name
-        if (!std::isalpha(args[1][0]) && args[1][0] != '_') {
+        if (!std::isalpha(varName[0]) && varName[0] != '_') {
           std::cerr << "declare: `" << args[1] << "': not a valid identifier" << std::endl;
           break;
         }
-        for (char c : args[1]) {
+        for (char c : varName) {
           if (!std::isalnum(c) && c != '_') {
             std::cerr << "declare: `" << args[1] << "': not a valid identifier" << std::endl;
             return;
           }
         }
-        //create variable
-        auto pos = args[1].find("=");
-        std::string varName(args[1], 0, pos);
+        //assign value
         std::string varValue(args[1], pos + 1);
         shellVars[varName] = varValue;
       }
