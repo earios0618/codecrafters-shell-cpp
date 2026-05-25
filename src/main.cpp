@@ -60,7 +60,7 @@ int main() {
     handle_jobs(false); //check for completed jobs
     std::string commandLine;
     commandLine = readline("$ ");
-    add_history(commandLine.data());
+    add_history(commandLine.c_str());
     std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
@@ -336,14 +336,11 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
       if (args.size() > 1) {
         if (args[1] == "-r") {
           //add history from file
-          std::FILE* file = std::fopen(args[2].c_str(), "r");
-          char buffer[256];
-          while (std::fgets(buffer, sizeof(buffer), file)){
-            std::string buffString(buffer);
-            buffString.pop_back(); // remove newline char
-            add_history(buffString.data());
-          }
+          read_history(args[2].c_str());
           break;
+        } else if (args[1] == "-w") {
+          //write history to file
+            write_history(args[2].c_str());
         } else {
           //show the last args[1] entries
           start = history_length - std::stoi(args[1]) + 1; //replace with faster impl, from_char
