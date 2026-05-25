@@ -15,10 +15,8 @@
 #include "Trie.h"
 #include <unordered_map>
 
-Command parse_command(std::string commandLine);
 std::string find_executable(std::string name);
 void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]);
-Trie init_cmd_trie();
 char** attempt_cmpltn(const char* text, int start, int end);
 char* first_cmpltn(const char* text, int state);
 char* file_cmpltn(const char* text, int state);
@@ -46,6 +44,7 @@ struct Job {
 };
 std::vector<Job> jobs; //storage for background jobs
 std::set<int> availIDs; //storage for available job IDs
+std::vector<std::string> history;
 
 //TODO: fix extra space in file auto completion double tab list, fix hidden files
 int main() {
@@ -61,10 +60,12 @@ int main() {
     handle_jobs(false); //check for completed jobs
     std::string commandLine;
     commandLine = readline("$ ");
+    history.push_back(commandLine);
     std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
     parse_args(commandStream, args);
+
     auto pipeIndex = std::find(args.begin(), args.end(), "|");
     //if '|' in command line, pipeline
     if (pipeIndex != args.end()){
@@ -96,29 +97,6 @@ int main() {
   close(originalStdin);
 }
 
-//return enum for string command
-Command parse_command(std::string commandString) {
-  if (commandString == "exit") {
-    return CMD_EXIT;
-  } else if (commandString == "type"){
-    return CMD_TYPE;
-  } else if (commandString == "echo") {
-    return CMD_ECHO;
-  } else if (commandString == "pwd") {
-    return CMD_PWD;
-  } else if (commandString == "cd") {
-    return CMD_CD;
-  } else if (commandString == "complete") {
-    return CMD_CMPLT;
-  } else if (commandString == "jobs") {
-    return CMD_JOBS;
-  } else if (commandString == "history") {
-    return CMD_HIST;
-  } else {
-    return NOT_BUILTIN;
-  }
-}
-
 //search through PATH environment variable for executable, return path if found, empty string if not found
 std::string find_executable(std::string name) {
   std::string path_env = std::getenv("PATH");
@@ -142,19 +120,6 @@ void redirect_output(std::stringstream& commandStream, int replacingFD, const ch
   int fd = fileno(file);
   dup2(fd, replacingFD);
   close(fd);
-}
-
-//initialize the Trie with builtin commands for auto-completion
-Trie init_cmd_trie() {
-  Trie commandTrie;
-  commandTrie.insert("echo");
-  commandTrie.insert("exit");
-  commandTrie.insert("type");
-  commandTrie.insert("pwd");
-  commandTrie.insert("cd");
-  commandTrie.insert("complete");
-  commandTrie.insert("history");
-  return commandTrie;
 }
 
 char** attempt_cmpltn(const char* text, int start, int end) {
@@ -365,6 +330,11 @@ void handle_builtin(Command command, std::vector<std::string>& args) {
     }
     case CMD_EXIT:
       keepRunning = false;
+      break;
+    case CMD_HIST:
+      for (int i = 1; i <= history.size(); i++) {
+        std::cout << "\t" << i << " " << history[i - 1] << std::endl;
+      }
       break;
     default:
       std::cerr << args[0] << ": command not found\n";
