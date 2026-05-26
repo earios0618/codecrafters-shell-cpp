@@ -459,7 +459,9 @@ void parse_args(std::stringstream& commandStream, std::vector<std::string>& args
       }
     }
     arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
-    args.push_back(arg);
+    if (!arg.empty()) {
+      args.push_back(arg);
+    }
   }
 }
 
