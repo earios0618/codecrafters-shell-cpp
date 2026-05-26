@@ -438,12 +438,24 @@ void parse_args(std::stringstream& commandStream, std::vector<std::string>& args
     }
     for (int i = 0; i < arg.size(); i++) {
       if (arg[i] == '$') {
-        std::string varName(&arg[i + 1]);
-        if (shellVars.find(varName) != shellVars.end()) {
-          arg.replace(i, varName.size() + 1, shellVars[varName]);
+        std::string varName;
+        std::size_t varEnd;
+        if (arg[i + 1] == '{') {
+          varEnd = arg.find('}', i + 2);
+          varName = arg.substr(i + 2, varEnd - (i + 2));
         } else {
-          arg.replace(i, varName.size() + 1, ""); //replace with empty string if variable not found
+          varName = &arg[i + 1];
+          varEnd = arg.size() - 1;
         }
+        std::string var;
+        std::string argStart = arg.substr(0, i);
+        std::string argEnd = arg.substr(varEnd + 1);
+        if (shellVars.find(varName) != shellVars.end()) {
+          var = shellVars[varName];
+        } else {
+          var = ""; //replace with empty string if variable not found
+        }
+        arg = argStart + var + argEnd;
       }
     }
     arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
