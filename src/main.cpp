@@ -446,13 +446,13 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
   for (int i = 0; i < args.size(); i++) { //output redirection
     std::string arg = args[i];
     if ((arg == ">" || arg == "1>") && args.size() > 0) {
-      redirect_output(arg, STDOUT_FILENO, "w");
+      redirect_output(args[i + 1], STDOUT_FILENO, "w");
     } else if(arg == "2>" && args.size() > 0) {
-      redirect_output(arg, STDERR_FILENO, "w");
+      redirect_output(args[i + 1], STDERR_FILENO, "w");
     } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
-      redirect_output(arg, STDOUT_FILENO, "a");
+      redirect_output(args[i + 1], STDOUT_FILENO, "a");
     } else if(arg == "2>>" && args.size() > 0) {
-      redirect_output(arg, STDERR_FILENO, "a");
+      redirect_output(args[i + 1], STDERR_FILENO, "a");
     } else {
       continue;
     }
