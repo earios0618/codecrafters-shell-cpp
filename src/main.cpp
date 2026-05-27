@@ -24,10 +24,11 @@ char* file_cmpltn(const char* text, int state);
 char *custom_cmpltn(const char* text, int state);
 void handle_builtin(Command command, std::vector<std::string>& args);
 void handle_jobs(bool showRunning);
-void parse_args(std::stringstream& commandStream, std::vector<std::string>& args);
+void parse_args(std::string& commandStream, std::vector<std::string>& args);
 void handle_bckgrnd(std::vector<std::string>& args);
 void handle_exec(std::vector<string>& args);
 void handle_pipe(std::vector<std::string>& args, std::vector<std::string>::iterator& pipeIndex);
+void parse_var(std::string& arg, int pos);
 
 int originalStdout = dup(STDOUT_FILENO);
 int originalStderr = dup(STDERR_FILENO);
@@ -67,10 +68,9 @@ int main() {
     std::string commandLine;
     commandLine = readline("$ ");
     add_history(commandLine.c_str());
-    std::stringstream commandStream(commandLine);
     //populate arguments, first argument is command
     std::vector<std::string> args;
-    parse_args(commandStream, args);
+    parse_args(commandLine, args);
 
     auto pipeIndex = std::find(args.begin(), args.end(), "|");
     //if '|' in command line, pipeline
@@ -118,10 +118,8 @@ std::string find_executable(std::string name) {
   return "";
 }
 
-//redirect replacingFD to next argument in stream which should be a file
-void redirect_output(std::stringstream& commandStream, int replacingFD, const char mode[]) {
-  std::string fileName;
-  commandStream >> fileName;
+//redirect replacingFD to fileName
+void redirect_output(std::string fileName, int replacingFD, const char mode[]) {
   std::FILE* file = std::fopen(fileName.c_str(), mode);
   int fd = fileno(file);
   dup2(fd, replacingFD);
@@ -420,48 +418,51 @@ void handle_jobs(bool showRunning) {
   );    
 }
 
-void parse_args(std::stringstream& commandStream, std::vector<std::string>& args) {
+void parse_args(std::string& commandLine, std::vector<std::string>& args) {
   std::string arg;
-  while (commandStream >> arg) {
-    if ((arg == ">" || arg == "1>") && args.size() > 0) {
-      redirect_output(commandStream, STDOUT_FILENO, "w");
-      continue;
-    } else if(arg == "2>" && args.size() > 0) {
-      redirect_output(commandStream, STDERR_FILENO, "w");
-      continue;
-    } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
-      redirect_output(commandStream, STDOUT_FILENO, "a");
-      continue;
-    } else if(arg == "2>>" && args.size() > 0) {
-      redirect_output(commandStream, STDERR_FILENO, "a");
-      continue;
-    }
-    for (int i = 0; i < arg.size(); i++) {
-      if (arg[i] == '$') {
-        std::string varName;
-        std::size_t varEnd;
-        if (arg[i + 1] == '{') {
-          varEnd = arg.find('}', i + 2);
-          varName = arg.substr(i + 2, varEnd - (i + 2));
-        } else {
-          varName = &arg[i + 1];
-          varEnd = arg.size() - 1;
-        }
-        std::string var;
-        std::string argStart = arg.substr(0, i);
-        std::string argEnd = arg.substr(varEnd + 1);
-        if (shellVars.find(varName) != shellVars.end()) {
-          var = shellVars[varName];
-        } else {
-          var = ""; //replace with empty string if variable not found
-        }
-        arg = argStart + var + argEnd;
-      }
-    }
-    arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
-    if (!arg.empty()) {
+  bool inQuote = false;
+  for (int i = 0; i < commandLine.size(); i++) {
+    char ch = commandLine[i];
+    if (ch == '\'') {
+      inQuote = !inQuote;
+    } else if (inQuote) {
+      arg.push_back(ch);
+    } else if (ch == '$') {
+      parse_var(commandLine, i);
+      i--;
+    } else if (ch != ' ') {
+      arg.push_back(ch);
+    } else if (!arg.empty()) {
+      arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
       args.push_back(arg);
+      arg.clear();
     }
+  }
+  if (!arg.empty()) {
+    arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
+    args.push_back(arg);
+  }
+  std::vector<int> toRemove;
+  for (int i = 0; i < args.size(); i++) { //output redirection
+    std::string arg = args[i];
+    if ((arg == ">" || arg == "1>") && args.size() > 0) {
+      redirect_output(arg, STDOUT_FILENO, "w");
+    } else if(arg == "2>" && args.size() > 0) {
+      redirect_output(arg, STDERR_FILENO, "w");
+    } else if ((arg == ">>" || arg == "1>>") && args.size() > 0) {
+      redirect_output(arg, STDOUT_FILENO, "a");
+    } else if(arg == "2>>" && args.size() > 0) {
+      redirect_output(arg, STDERR_FILENO, "a");
+    } else {
+      continue;
+    }
+    //set to remove from args
+    toRemove.push_back(i);
+    toRemove.push_back(++i);
+  }
+  std::sort(toRemove.rbegin(), toRemove.rend()); // reverse indicies
+  for (int index : toRemove) { //remove arguments starting from later indicies to preserve validity
+    args.erase(args.begin() + index);
   }
 }
 
@@ -566,4 +567,30 @@ void handle_pipe(std::vector<std::string>& args, std::vector<std::string>::itera
   for (int pid : pids) {
     waitpid(pid, nullptr, 0);
   }
+}
+
+//shell variable parsing, returns number of chars to skip when parsing
+void parse_var(std::string& arg, int pos) {
+  std::string varName;
+  std::size_t varEnd;
+  if (arg[pos + 1] == '{') {
+    varEnd = arg.find('}', pos + 2);
+    varName = arg.substr(pos + 2, varEnd - (pos + 2));
+  } else {
+    varEnd = arg.find(' ', pos + 1);
+    if (varEnd == std::string::npos) {
+      varEnd = arg.size();
+    }
+    varName = arg.substr(pos + 1, varEnd - (pos + 1));
+    varEnd--;
+  }
+  std::string var;
+  std::string argStart = arg.substr(0, pos);
+  std::string argEnd = arg.substr(varEnd + 1);
+  if (shellVars.find(varName) != shellVars.end()) {
+    var = shellVars[varName];
+  } else {
+    var = ""; //replace with empty string if variable not found
+  }
+  arg = argStart + var + argEnd;
 }
