@@ -420,12 +420,17 @@ void handle_jobs(bool showRunning) {
 
 void parse_args(std::string& commandLine, std::vector<std::string>& args) {
   std::string arg;
-  bool inQuote = false;
+  bool inSingle = false;
+  bool inDouble = false;
   for (int i = 0; i < commandLine.size(); i++) {
     char ch = commandLine[i];
     if (ch == '\'') {
-      inQuote = !inQuote;
-    } else if (inQuote) {
+      inSingle = !inSingle;
+    } else if (ch == '"') {
+      inDouble = !inDouble;
+    } else if (inSingle) {
+      arg.push_back(ch);
+    } else if (inDouble) {
       arg.push_back(ch);
     } else if (ch == '$') {
       parse_var(commandLine, i);
