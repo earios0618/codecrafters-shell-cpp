@@ -436,7 +436,7 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
       inSingle = !inSingle;
     } else if (inSingle) {
       arg.push_back(ch);
-    } else if (ch == '/') {
+    } else if (ch == '\\') {
       takeLiteral = true;
     } else if (ch == '$') {
       parse_var(commandLine, i);
