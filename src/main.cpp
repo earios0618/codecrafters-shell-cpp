@@ -422,9 +422,13 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
   std::string arg;
   bool inSingle = false; //in single quotes
   bool inDouble = false; //in double quotes
+  bool takeLiteral = false; //set by escape character '/'
   for (int i = 0; i < commandLine.size(); i++) {
     char ch = commandLine[i];
-    if (ch == '"') {
+    if (takeLiteral) {
+      arg.push_back(ch);
+      takeLiteral = false;
+    } else if (ch == '"') {
       inDouble = !inDouble;
     } else if (inDouble) {
       arg.push_back(ch);
@@ -432,6 +436,8 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
       inSingle = !inSingle;
     } else if (inSingle) {
       arg.push_back(ch);
+    } else if (ch == '/') {
+      takeLiteral = true;
     } else if (ch == '$') {
       parse_var(commandLine, i);
       i--;
