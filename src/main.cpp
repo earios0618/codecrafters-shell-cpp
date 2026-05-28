@@ -431,7 +431,11 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
     } else if (!inSingle && ch == '"') {
       inDouble = !inDouble;
     } else if (inDouble) {
-      arg.push_back(ch);
+      if(ch == '//') {
+        takeLiteral = true;
+      } else {
+        arg.push_back(ch);
+      }
     } else if (!inDouble && ch == '\'') {
       inSingle = !inSingle;
     } else if (inSingle) {
