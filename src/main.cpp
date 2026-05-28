@@ -429,12 +429,10 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
       arg.push_back(ch);
       takeLiteral = false;
     } else if (ch == '"') {
-      std::cout << "HAPP\n";
       inDouble = !inDouble;
     } else if (inDouble) {
       arg.push_back(ch);
     } else if (ch == '\'') {
-      std::cout << "HAPP\n";
       inSingle = !inSingle;
     } else if (inSingle) {
       arg.push_back(ch);
@@ -446,13 +444,11 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
     } else if (ch != ' ') {
       arg.push_back(ch);
     } else if (!arg.empty()) {
-      arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
       args.push_back(arg);
       arg.clear();
     }
   }
   if (!arg.empty()) {
-    arg.erase(std::remove(arg.begin(), arg.end(), '"'), arg.end()); //TODO: work with quotes
     args.push_back(arg);
   }
   std::vector<int> toRemove;
