@@ -426,8 +426,11 @@ void parse_args(std::string& commandLine, std::vector<std::string>& args) {
   for (int i = 0; i < commandLine.size(); i++) {
     char ch = commandLine[i];
     if (takeLiteral) {
-      arg.push_back(ch);
       takeLiteral = false;
+      if (inDouble && !(ch == '"' || ch == '\\' || ch == '$' || ch == '`' || ch == '\n')) {
+        arg.push_back('\\');
+      } 
+      arg.push_back(ch);
     } else if (!inSingle && ch == '"') {
       inDouble = !inDouble;
     } else if (inDouble) {
