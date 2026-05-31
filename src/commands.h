@@ -1,4 +1,5 @@
 #include "Trie.h"
+
 enum Command {
     CMD_ECHO,
     CMD_EXIT,
@@ -11,6 +12,8 @@ enum Command {
     CMD_DCLR,
     NOT_BUILTIN
 };
+
+extern Trie commandTrie;
 
 Trie init_cmd_trie();
 Command parse_command(std::string commandString);
